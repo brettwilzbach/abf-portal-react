@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { Search, Download, Filter, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Search, Download, Filter, RefreshCw, Wifi, WifiOff, Newspaper, ExternalLink } from 'lucide-react';
 import { useMarketData } from '@/hooks/useMarketData';
-import { COLLATERAL_TYPES, RATINGS, CollateralType, Rating } from '@/types/market';
+import { COLLATERAL_TYPES, RATINGS, CollateralType, RatingFilter, Rating } from '@/types/market';
+import { getABFNews, ABFNewsArticle } from '@/lib/bloomberg';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { NotePad } from '@/components/ui/notepad';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,9 +47,46 @@ function getRatingColor(rating: Rating): string {
   return colors[rating] || 'bg-gray-400 text-white';
 }
 
+// Mock news for when Bloomberg is unavailable
+const MOCK_NEWS: ABFNewsArticle[] = [
+  { headline: 'Auto ABS Spreads Tighten as Demand Outpaces Supply', date: '2025-12-18', source: 'ABF Journal', storyId: '' },
+  { headline: 'CLO Market Sees Record Q4 Issuance', date: '2025-12-17', source: 'Bloomberg', storyId: '' },
+  { headline: 'Subprime Auto Delinquencies Rise Slightly in November', date: '2025-12-16', source: 'ABF Journal', storyId: '' },
+  { headline: 'Equipment ABS Returns Gain Favor with Insurers', date: '2025-12-15', source: 'Private Debt Investor', storyId: '' },
+  { headline: 'Consumer ABS Outlook: What to Expect in 2026', date: '2025-12-14', source: 'ABF Journal', storyId: '' },
+];
+
 export default function MarketTrackerPage() {
   const { deals, filters, stats, updateFilter, resetFilters, isLoading, dataSource, refresh } = useMarketData();
   const [showFilters, setShowFilters] = useState(true);
+  const [news, setNews] = useState<ABFNewsArticle[]>(MOCK_NEWS);
+  const [newsLoading, setNewsLoading] = useState(false);
+
+  // Fetch ABF news
+  const fetchNews = useCallback(async () => {
+    if (dataSource !== 'bloomberg') {
+      setNews(MOCK_NEWS);
+      return;
+    }
+
+    setNewsLoading(true);
+    try {
+      const articles = await getABFNews('ABF', 5);
+      if (articles && articles.length > 0) {
+        setNews(articles);
+      } else {
+        setNews(MOCK_NEWS);
+      }
+    } catch {
+      setNews(MOCK_NEWS);
+    } finally {
+      setNewsLoading(false);
+    }
+  }, [dataSource]);
+
+  useEffect(() => {
+    fetchNews();
+  }, [fetchNews]);
 
   const handleExportCSV = () => {
     const headers = ['Deal Name', 'Issuer', 'Collateral', 'Size ($M)', 'Rating', 'Spread (bps)', 'WAL', 'CE %', 'Pricing Date'];
@@ -200,13 +239,17 @@ export default function MarketTrackerPage() {
                 <label className="text-sm text-gray-500 mb-1 block">Rating</label>
                 <Select
                   value={filters.rating}
-                  onValueChange={(val) => updateFilter('rating', val as Rating | 'All')}
+                  onValueChange={(val) => updateFilter('rating', val as RatingFilter)}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="All Ratings" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="All">All Ratings</SelectItem>
+                    <SelectItem value="Non-AAA">Non-AAA</SelectItem>
+                    <SelectItem value="IG">IG (AAA-BBB)</SelectItem>
+                    <SelectItem value="Sub-IG">Sub-IG (BB-B)</SelectItem>
+                    <div className="h-px bg-gray-200 my-1" />
                     {RATINGS.map((rating) => (
                       <SelectItem key={rating} value={rating}>
                         {rating}
@@ -277,6 +320,62 @@ export default function MarketTrackerPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ABF News Section */}
+      <Card className="mt-6">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Newspaper className="h-4 w-4" />
+              ABF News
+              <span className="text-xs font-normal text-gray-500 ml-2">via NI PRIVCRED</span>
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={fetchNews}
+              disabled={newsLoading}
+              className="h-8"
+            >
+              <RefreshCw className={`h-3 w-3 ${newsLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {news.map((article, idx) => (
+              <div
+                key={idx}
+                className="flex items-start justify-between gap-4 py-2 border-b last:border-0"
+              >
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-800 hover:text-[#1E3A5F] cursor-pointer">
+                    {article.headline}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-gray-500">{article.date}</span>
+                    <span className="text-xs text-gray-400">•</span>
+                    <span className="text-xs text-gray-500">{article.source}</span>
+                  </div>
+                </div>
+                {article.storyId && (
+                  <Button variant="ghost" size="sm" className="h-6 px-2">
+                    <ExternalLink className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+          {dataSource === 'mock' && (
+            <p className="text-xs text-gray-400 mt-4 text-center">
+              Sample headlines • Connect to Bloomberg for live NI PRIVCRED feed
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* NotePad */}
+      <NotePad storageKey="market-tracker-notes" />
 
       {/* Footer */}
       <div className="border-t pt-4 mt-6">

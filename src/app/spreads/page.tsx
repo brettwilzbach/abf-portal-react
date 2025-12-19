@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown, Minus, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { isBloombergAvailable } from '@/lib/bloomberg';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { NotePad } from '@/components/ui/notepad';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +33,43 @@ interface SpreadData {
   oneYearMin: number;
   oneYearMax: number;
 }
+
+// Private Credit vs Public Credit Yield Data (mock data based on market research)
+interface PrivateCreditData {
+  category: string;
+  privateYield: number;
+  publicYield: number;
+  premium: number;
+  description: string;
+}
+
+const PRIVATE_CREDIT_DATA: PrivateCreditData[] = [
+  { category: 'Direct Lending (1st Lien)', privateYield: 10.5, publicYield: 8.2, premium: 230, description: 'SOFR + 450-500bps' },
+  { category: 'Unitranche', privateYield: 11.2, publicYield: 8.5, premium: 270, description: 'Blended senior/mezz' },
+  { category: 'Private ABF (AAA)', privateYield: 6.8, publicYield: 5.9, premium: 90, description: 'vs. public ABS AAA' },
+  { category: 'Private ABF (BBB)', privateYield: 9.5, publicYield: 7.8, premium: 170, description: 'vs. public ABS BBB' },
+  { category: 'Middle Market CLO', privateYield: 12.5, publicYield: 10.2, premium: 230, description: 'vs. BSL CLO BB' },
+];
+
+// Historical spread differential (mock time series)
+interface SpreadHistory {
+  period: string;
+  directLendingSpread: number;
+  bslSpread: number;
+  premium: number;
+}
+
+const SPREAD_HISTORY: SpreadHistory[] = [
+  { period: 'Q1 2023', directLendingSpread: 625, bslSpread: 450, premium: 175 },
+  { period: 'Q2 2023', directLendingSpread: 600, bslSpread: 425, premium: 175 },
+  { period: 'Q3 2023', directLendingSpread: 575, bslSpread: 400, premium: 175 },
+  { period: 'Q4 2023', directLendingSpread: 550, bslSpread: 390, premium: 160 },
+  { period: 'Q1 2024', directLendingSpread: 525, bslSpread: 375, premium: 150 },
+  { period: 'Q2 2024', directLendingSpread: 500, bslSpread: 360, premium: 140 },
+  { period: 'Q3 2024', directLendingSpread: 485, bslSpread: 340, premium: 145 },
+  { period: 'Q4 2024', directLendingSpread: 475, bslSpread: 320, premium: 155 },
+  { period: 'Q1 2025', directLendingSpread: 465, bslSpread: 305, premium: 160 },
+];
 
 const MOCK_SPREADS: SpreadData[] = [
   { sector: 'CLO AAA', currentSpread: 140, benchmark: 'SOFR', ytdChange: -15, zScore: 0.8, oneYearAvg: 155, oneYearMin: 125, oneYearMax: 185 },
@@ -300,6 +338,126 @@ export default function SpreadMonitorPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Private Credit vs Public Credit Yield Premium */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Private Credit vs Public Credit Yield Premium</CardTitle>
+          <p className="text-sm text-gray-500">Illustrative yield differential across credit categories</p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {PRIVATE_CREDIT_DATA.map((item) => (
+              <div key={item.category} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <span className="font-medium text-[#1E3A5F]">{item.category}</span>
+                    <p className="text-xs text-gray-500">{item.description}</p>
+                  </div>
+                  <Badge className="bg-green-100 text-green-800 font-mono">
+                    +{item.premium}bps premium
+                  </Badge>
+                </div>
+                {/* Visual bar comparison */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-500 w-20">Private</span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-4 relative overflow-hidden">
+                      <div
+                        className="bg-[#1E3A5F] h-4 rounded-full flex items-center justify-end pr-2"
+                        style={{ width: `${(item.privateYield / 15) * 100}%` }}
+                      >
+                        <span className="text-xs text-white font-mono">{item.privateYield.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-500 w-20">Public</span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-4 relative overflow-hidden">
+                      <div
+                        className="bg-[#4A7AB0] h-4 rounded-full flex items-center justify-end pr-2"
+                        style={{ width: `${(item.publicYield / 15) * 100}%` }}
+                      >
+                        <span className="text-xs text-white font-mono">{item.publicYield.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Spread Differential Trend */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Direct Lending vs BSL Spread Differential</CardTitle>
+          <p className="text-sm text-gray-500">Private credit spread premium over broadly syndicated loans (bps)</p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Summary stats */}
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="text-center p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Current Premium</p>
+                <p className="text-xl font-bold text-[#1E3A5F]">+160bps</p>
+              </div>
+              <div className="text-center p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">2Y Average</p>
+                <p className="text-xl font-bold text-gray-600">+162bps</p>
+              </div>
+              <div className="text-center p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">Range</p>
+                <p className="text-xl font-bold text-gray-600">140-175bps</p>
+              </div>
+            </div>
+
+            {/* Visual timeline */}
+            <div className="overflow-x-auto">
+              <div className="flex gap-2 min-w-max pb-2">
+                {SPREAD_HISTORY.map((item, idx) => (
+                  <div key={item.period} className="flex flex-col items-center w-20">
+                    {/* Stacked bar */}
+                    <div className="h-32 w-full flex flex-col justify-end">
+                      {/* Premium portion */}
+                      <div
+                        className="w-full bg-green-400 rounded-t-sm"
+                        style={{ height: `${(item.premium / 700) * 100}%` }}
+                      />
+                      {/* BSL portion */}
+                      <div
+                        className="w-full bg-[#4A7AB0]"
+                        style={{ height: `${(item.bslSpread / 700) * 100}%` }}
+                      />
+                    </div>
+                    {/* Labels */}
+                    <div className="text-xs text-center mt-2">
+                      <p className="font-medium text-[#1E3A5F]">{item.directLendingSpread}</p>
+                      <p className="text-gray-400">{item.period}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center justify-center gap-6 pt-2 border-t">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-[#4A7AB0] rounded" />
+                <span className="text-xs text-gray-600">BSL Spread</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-green-400 rounded" />
+                <span className="text-xs text-gray-600">Private Premium</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* NotePad */}
+      <NotePad storageKey="spread-monitor-notes" />
 
       {/* Footer */}
       <div className="border-t pt-4 mt-6">

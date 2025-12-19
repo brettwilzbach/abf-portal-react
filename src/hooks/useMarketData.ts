@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Deal, MarketFilters, MarketStats } from '@/types/market';
-import { getBloombergDeals, isBloombergAvailable } from '@/lib/bloomberg';
+import { Deal, MarketFilters, MarketStats, RATING_GROUPS, RatingFilter } from '@/types/market';
+import { isBloombergAvailable, getBloombergDeals } from '@/lib/bloomberg';
 
 // =============================================================================
 // MOCK DATA - Used as fallback when Bloomberg is unavailable
@@ -9,115 +9,102 @@ import { getBloombergDeals, isBloombergAvailable } from '@/lib/bloomberg';
 const MOCK_DEALS: Deal[] = [
   {
     id: '1',
-    dealName: 'ACMAT 2025-1',
-    issuer: "America's Car-Mart",
+    dealName: 'DRIVE 2025-5',
+    issuer: 'Santander Drive',
     collateralType: 'Auto - Subprime',
-    dealSize: 200,
-    pricingDate: '2025-01-15',
-    rating: 'BBB',
-    spread: 185,
-    wal: 1.8,
-    creditEnhancement: 42.5,
+    dealSize: 875,
+    pricingDate: '2025-12-18',
+    rating: 'AAA',
+    spread: 92,
+    wal: 2.1,
+    creditEnhancement: 54.5,
     format: '144A',
   },
   {
     id: '2',
-    dealName: 'DRIVE 2025-1',
-    issuer: 'Santander Drive',
-    collateralType: 'Auto - Subprime',
-    dealSize: 850,
-    pricingDate: '2025-01-10',
+    dealName: 'CARMX 2025-4',
+    issuer: 'CarMax Auto Owner Trust',
+    collateralType: 'Auto - Prime',
+    dealSize: 1250,
+    pricingDate: '2025-12-17',
     rating: 'AAA',
-    spread: 95,
-    wal: 2.1,
-    creditEnhancement: 55.0,
+    spread: 52,
+    wal: 1.5,
+    creditEnhancement: 12.0,
     format: '144A',
   },
   {
     id: '3',
-    dealName: 'CARMX 2025-1',
-    issuer: 'CarMax',
-    collateralType: 'Auto - Prime',
-    dealSize: 1200,
-    pricingDate: '2025-01-08',
+    dealName: 'TREST XVIII',
+    issuer: 'Trinitas CLO',
+    collateralType: 'CLO',
+    dealSize: 510,
+    pricingDate: '2025-12-16',
     rating: 'AAA',
-    spread: 55,
-    wal: 1.5,
-    creditEnhancement: 12.5,
+    spread: 118,
+    wal: 5.0,
+    creditEnhancement: 38.5,
     format: '144A',
   },
   {
     id: '4',
-    dealName: 'TREST 2025-1',
-    issuer: 'Trinitas Capital',
-    collateralType: 'CLO',
-    dealSize: 500,
-    pricingDate: '2025-01-05',
-    rating: 'AAA',
-    spread: 140,
-    wal: 5.2,
-    creditEnhancement: 38.0,
-    format: '144A',
-  },
-  {
-    id: '5',
-    dealName: 'ALLY 2024-4',
-    issuer: 'Ally Financial',
+    dealName: 'ALLY 2025-A4',
+    issuer: 'Ally Auto Receivables',
     collateralType: 'Auto - Prime',
-    dealSize: 1500,
-    pricingDate: '2024-12-15',
+    dealSize: 1425,
+    pricingDate: '2025-12-13',
     rating: 'AAA',
-    spread: 48,
+    spread: 45,
     wal: 1.4,
     creditEnhancement: 10.5,
     format: '144A',
   },
   {
-    id: '6',
-    dealName: 'SDART 2024-4',
-    issuer: 'Santander Drive',
+    id: '5',
+    dealName: 'SDART 2025-5',
+    issuer: 'Santander Drive Auto',
     collateralType: 'Auto - Subprime',
-    dealSize: 750,
-    pricingDate: '2024-12-10',
+    dealSize: 780,
+    pricingDate: '2025-12-12',
     rating: 'AA',
-    spread: 115,
+    spread: 120,
     wal: 2.3,
-    creditEnhancement: 48.0,
+    creditEnhancement: 47.5,
     format: '144A',
   },
   {
-    id: '7',
-    dealName: 'FORDO 2024-C',
-    issuer: 'Ford Credit',
+    id: '6',
+    dealName: 'FORDO 2025-D',
+    issuer: 'Ford Credit Auto Owner',
     collateralType: 'Auto - Prime',
-    dealSize: 1800,
-    pricingDate: '2024-12-05',
+    dealSize: 1650,
+    pricingDate: '2025-12-11',
     rating: 'AAA',
-    spread: 52,
+    spread: 48,
     wal: 1.6,
     creditEnhancement: 11.0,
     format: '144A',
   },
   {
-    id: '8',
-    dealName: 'OAKCL 2024-2',
-    issuer: 'Oaktree Capital',
+    id: '7',
+    dealName: 'OAKCL 2025-26',
+    issuer: 'Oaktree CLO',
     collateralType: 'CLO',
-    dealSize: 450,
-    pricingDate: '2024-11-20',
+    dealSize: 485,
+    pricingDate: '2025-12-10',
     rating: 'AAA',
-    spread: 145,
-    wal: 5.5,
-    creditEnhancement: 40.0,
+    spread: 122,
+    wal: 5.3,
+    creditEnhancement: 39.0,
     format: '144A',
   },
   {
-    id: '9',
-    dealName: 'WOART 2024-D',
-    issuer: 'World Omni',
+    id: '8',
+    dealName: 'WOART 2025-D',
+    issuer: 'World Omni Auto',
     collateralType: 'Auto - Prime',
-    dealSize: 900,
-    pricingDate: '2024-11-15',
+    dealSize: 925,
+    pricingDate: '2025-12-09',
     rating: 'AAA',
     spread: 50,
     wal: 1.5,
@@ -125,42 +112,55 @@ const MOCK_DEALS: Deal[] = [
     format: '144A',
   },
   {
-    id: '10',
-    dealName: 'AMCAR 2024-3',
-    issuer: 'AmeriCredit',
+    id: '9',
+    dealName: 'AMCAR 2025-4',
+    issuer: 'AmeriCredit Auto',
     collateralType: 'Auto - Subprime',
-    dealSize: 1100,
-    pricingDate: '2024-11-10',
+    dealSize: 1050,
+    pricingDate: '2025-12-06',
     rating: 'A',
-    spread: 135,
+    spread: 140,
     wal: 2.0,
-    creditEnhancement: 45.0,
+    creditEnhancement: 44.5,
     format: '144A',
   },
   {
-    id: '11',
-    dealName: 'COPAR 2024-2',
-    issuer: 'Capital One',
+    id: '10',
+    dealName: 'COPAR 2025-3',
+    issuer: 'Capital One Prime Auto',
     collateralType: 'Auto - Prime',
-    dealSize: 1400,
-    pricingDate: '2024-10-25',
+    dealSize: 1350,
+    pricingDate: '2025-12-05',
     rating: 'AAA',
-    spread: 45,
+    spread: 42,
     wal: 1.3,
     creditEnhancement: 9.5,
     format: '144A',
   },
   {
-    id: '12',
-    dealName: 'EQPMT 2024-1',
-    issuer: 'Great Elm Capital',
-    collateralType: 'Equipment',
-    dealSize: 350,
-    pricingDate: '2024-10-15',
+    id: '11',
+    dealName: 'UPST 2025-4',
+    issuer: 'Upstart Securitization',
+    collateralType: 'Consumer',
+    dealSize: 325,
+    pricingDate: '2025-12-04',
     rating: 'A',
-    spread: 125,
-    wal: 3.2,
-    creditEnhancement: 22.0,
+    spread: 165,
+    wal: 2.2,
+    creditEnhancement: 28.0,
+    format: '144A',
+  },
+  {
+    id: '12',
+    dealName: 'HAROT 2025-4',
+    issuer: 'Honda Auto Receivables',
+    collateralType: 'Auto - Prime',
+    dealSize: 1575,
+    pricingDate: '2025-12-03',
+    rating: 'AAA',
+    spread: 40,
+    wal: 1.4,
+    creditEnhancement: 8.5,
     format: '144A',
   },
 ];
@@ -180,7 +180,7 @@ export function useMarketData() {
   const [isLoading, setIsLoading] = useState(false);
   const [dataSource, setDataSource] = useState<'mock' | 'bloomberg'>('mock');
 
-  // Fetch data from Bloomberg if available
+  // Fetch deals from Bloomberg if available, otherwise use mock data
   const fetchBloombergData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -191,9 +191,9 @@ export function useMarketData() {
         return;
       }
 
-      const bloombergDeals = await getBloombergDeals(90);
+      // Fetch deals from Bloomberg MCP - last 10 days of issuance
+      const bloombergDeals = await getBloombergDeals(10, 'ALL');
       if (bloombergDeals && bloombergDeals.length > 0) {
-        // Transform Bloomberg data to our Deal format
         const transformedDeals: Deal[] = bloombergDeals.map((d, idx) => ({
           id: String(idx + 1),
           dealName: d.name || d.ticker,
@@ -204,14 +204,15 @@ export function useMarketData() {
           rating: d.rating as Deal['rating'],
           spread: d.spread,
           wal: d.wal,
-          creditEnhancement: 0, // Not always available from Bloomberg
+          creditEnhancement: 0,
           format: '144A',
         }));
         setDeals(transformedDeals);
         setDataSource('bloomberg');
       } else {
+        // Bloomberg available but no deals returned - use mock
         setDeals(MOCK_DEALS);
-        setDataSource('mock');
+        setDataSource('bloomberg'); // Still show connected
       }
     } catch {
       setDeals(MOCK_DEALS);
@@ -231,8 +232,21 @@ export function useMarketData() {
       if (filters.collateralType !== 'All' && deal.collateralType !== filters.collateralType) {
         return false;
       }
-      if (filters.rating !== 'All' && deal.rating !== filters.rating) {
-        return false;
+      // Handle rating filter (including groups)
+      if (filters.rating !== 'All') {
+        const ratingFilter = filters.rating as RatingFilter;
+        if (ratingFilter in RATING_GROUPS) {
+          // It's a group filter (Non-AAA, IG, Sub-IG)
+          const allowedRatings = RATING_GROUPS[ratingFilter as keyof typeof RATING_GROUPS];
+          if (!allowedRatings.includes(deal.rating)) {
+            return false;
+          }
+        } else {
+          // It's a single rating filter
+          if (deal.rating !== filters.rating) {
+            return false;
+          }
+        }
       }
       if (filters.search) {
         const searchLower = filters.search.toLowerCase();

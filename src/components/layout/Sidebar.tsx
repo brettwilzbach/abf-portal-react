@@ -5,8 +5,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   Home,
-  GraduationCap,
-  TrendingUp,
+  Calculator,
   TrendingDown,
   Newspaper,
   ExternalLink,
@@ -24,14 +23,12 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Home', href: '/', icon: Home },
-  { label: 'Deal Analyzer', href: '/analyzer', icon: GraduationCap },
-  { label: 'Waterfall Modeler', href: '/waterfall', icon: TrendingUp },
+  { label: 'Deal Modeler', href: '/deal-modeler', icon: Calculator },
   { label: 'Spread Monitor', href: '/spreads', icon: TrendingDown },
   { label: 'Market Tracker', href: '/market', icon: Newspaper },
 ];
 
 const resources = [
-  { label: 'SEC EDGAR ABS-15G', href: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&type=ABS-15G' },
   { label: 'LCD CLO News', href: 'https://www.lcdcomps.com/' },
   { label: 'Creditflux', href: 'https://www.creditflux.com/' },
   { label: 'KBRA ABS Research', href: 'https://www.kbra.com/sectors/abs' },

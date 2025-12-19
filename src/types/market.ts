@@ -32,13 +32,23 @@ export type CollateralType =
 
 export type Rating = 'AAA' | 'AA' | 'A' | 'BBB' | 'BB' | 'B' | 'NR';
 
+// Rating filter options (includes groups)
+export type RatingFilter = Rating | 'All' | 'Non-AAA' | 'IG' | 'Sub-IG';
+
 export type DealFormat = '144A' | 'Reg S' | 'Private';
 
 export interface MarketFilters {
   collateralType: CollateralType | 'All';
-  rating: Rating | 'All';
+  rating: RatingFilter;
   search: string;
 }
+
+// Rating group definitions
+export const RATING_GROUPS = {
+  'Non-AAA': ['AA', 'A', 'BBB', 'BB', 'B', 'NR'] as Rating[],
+  'IG': ['AAA', 'AA', 'A', 'BBB'] as Rating[],
+  'Sub-IG': ['BB', 'B'] as Rating[],
+} as const;
 
 export interface MarketStats {
   totalDeals: number;

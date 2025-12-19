@@ -55,15 +55,17 @@ export interface BloombergDeal {
 // =============================================================================
 
 /**
- * Check if Bloomberg server is available
+ * Check if Bloomberg MCP server is available
+ * Uses the Next.js API proxy to avoid CORS issues
  */
 export async function isBloombergAvailable(): Promise<boolean> {
   try {
-    const response = await fetch(`${BLOOMBERG_API}/health`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(2000),
+    const response = await fetch('/api/bloomberg?endpoint=health', {
+      signal: AbortSignal.timeout(3000),
     });
-    return response.ok;
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data.available === true;
   } catch {
     return false;
   }
@@ -131,12 +133,23 @@ export async function getBloombergStructuredSpreads(): Promise<BloombergData | n
 }
 
 /**
- * Get recent ABS deals from Bloomberg MCAL
+ * Get recent ABS deals from Bloomberg via MCP
+ * Uses saved Bloomberg screen for reliable results
  */
-export async function getBloombergDeals(days: number = 30): Promise<BloombergDeal[] | null> {
+export async function getBloombergDeals(
+  days: number = 30,
+  dealType: string = 'AUTO',
+  screenName: string = 'PRIVATE_ABS'
+): Promise<BloombergDeal[] | null> {
   try {
-    const response = await fetch(`${BLOOMBERG_API}/api/deals/recent?days=${days}`, {
-      signal: AbortSignal.timeout(15000),
+    const params = new URLSearchParams({
+      endpoint: 'deals',
+      type: dealType,
+      days: String(days),
+      screen: screenName,
+    });
+    const response = await fetch(`/api/bloomberg?${params}`, {
+      signal: AbortSignal.timeout(30000),
     });
     if (!response.ok) return null;
     const data = await response.json();
@@ -176,6 +189,33 @@ export async function getBloombergHistoricalSpreads(
     );
     if (!response.ok) return null;
     return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+// =============================================================================
+// NEWS
+// =============================================================================
+
+export interface ABFNewsArticle {
+  headline: string;
+  date: string;
+  source: string;
+  storyId: string;
+}
+
+/**
+ * Get ABF news from Bloomberg NI PRIVCRED
+ */
+export async function getABFNews(keyword: string = 'ABF', maxArticles: number = 10): Promise<ABFNewsArticle[] | null> {
+  try {
+    const response = await fetch(`/api/bloomberg?endpoint=news&keyword=${encodeURIComponent(keyword)}&max=${maxArticles}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.articles ?? null;
   } catch {
     return null;
   }

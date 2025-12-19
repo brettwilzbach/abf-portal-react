@@ -31,4 +31,5 @@ Write-Host "Press Ctrl+C to stop the server." -ForegroundColor Gray
 Write-Host ""
 
 # Start the server
-python -m blpapi_mcp --sse --host 127.0.0.1 --port 8000
+# Note: blpapi_mcp doesn't have __main__.py, so we call main() directly
+python -c "import sys; sys.argv = ['', '--sse', '--host', '127.0.0.1', '--port', '8000']; from blpapi_mcp import main; main()"

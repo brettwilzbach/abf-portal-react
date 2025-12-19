@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
-import { Deal, MarketFilters, MarketStats, CollateralType, Rating } from '@/types/market';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { Deal, MarketFilters, MarketStats } from '@/types/market';
+import { getBloombergDeals, isBloombergAvailable } from '@/lib/bloomberg';
 
 // =============================================================================
-// MOCK DATA - Replace with API calls when backend is ready
+// MOCK DATA - Used as fallback when Bloomberg is unavailable
 // =============================================================================
 
 const MOCK_DEALS: Deal[] = [
@@ -175,19 +176,64 @@ export function useMarketData() {
     search: '',
   });
 
+  const [deals, setDeals] = useState<Deal[]>(MOCK_DEALS);
+  const [isLoading, setIsLoading] = useState(false);
+  const [dataSource, setDataSource] = useState<'mock' | 'bloomberg'>('mock');
+
+  // Fetch data from Bloomberg if available
+  const fetchBloombergData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const available = await isBloombergAvailable();
+      if (!available) {
+        setDeals(MOCK_DEALS);
+        setDataSource('mock');
+        return;
+      }
+
+      const bloombergDeals = await getBloombergDeals(90);
+      if (bloombergDeals && bloombergDeals.length > 0) {
+        // Transform Bloomberg data to our Deal format
+        const transformedDeals: Deal[] = bloombergDeals.map((d, idx) => ({
+          id: String(idx + 1),
+          dealName: d.name || d.ticker,
+          issuer: d.issuer,
+          collateralType: mapCollateralType(d.collateralType),
+          dealSize: d.dealSize,
+          pricingDate: d.issueDate,
+          rating: d.rating as Deal['rating'],
+          spread: d.spread,
+          wal: d.wal,
+          creditEnhancement: 0, // Not always available from Bloomberg
+          format: '144A',
+        }));
+        setDeals(transformedDeals);
+        setDataSource('bloomberg');
+      } else {
+        setDeals(MOCK_DEALS);
+        setDataSource('mock');
+      }
+    } catch {
+      setDeals(MOCK_DEALS);
+      setDataSource('mock');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchBloombergData();
+  }, [fetchBloombergData]);
+
   const filteredDeals = useMemo(() => {
-    return MOCK_DEALS.filter((deal) => {
-      // Filter by collateral type
+    return deals.filter((deal) => {
       if (filters.collateralType !== 'All' && deal.collateralType !== filters.collateralType) {
         return false;
       }
-
-      // Filter by rating
       if (filters.rating !== 'All' && deal.rating !== filters.rating) {
         return false;
       }
-
-      // Filter by search term
       if (filters.search) {
         const searchLower = filters.search.toLowerCase();
         return (
@@ -195,10 +241,9 @@ export function useMarketData() {
           deal.issuer.toLowerCase().includes(searchLower)
         );
       }
-
       return true;
     });
-  }, [filters]);
+  }, [deals, filters]);
 
   const stats: MarketStats = useMemo(() => {
     const totalDeals = filteredDeals.length;
@@ -231,6 +276,28 @@ export function useMarketData() {
     stats,
     updateFilter,
     resetFilters,
-    isLoading: false, // Will be true when fetching from API
+    isLoading,
+    dataSource,
+    refresh: fetchBloombergData,
   };
+}
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+function mapCollateralType(bbgType: string): Deal['collateralType'] {
+  const typeMap: Record<string, Deal['collateralType']> = {
+    'AUTO': 'Auto - Prime',
+    'AUTO PRIME': 'Auto - Prime',
+    'AUTO SUBPRIME': 'Auto - Subprime',
+    'CLO': 'CLO',
+    'EQUIPMENT': 'Equipment',
+    'CREDIT CARD': 'Credit Card',
+    'CONSUMER': 'Consumer',
+    'RMBS': 'RMBS',
+    'ESOTERIC': 'Esoteric',
+  };
+  const upper = (bbgType || '').toUpperCase();
+  return typeMap[upper] || 'Esoteric';
 }

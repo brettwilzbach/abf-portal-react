@@ -44,7 +44,8 @@ export default function Home() {
   useEffect(() => {
     async function fetchSofr() {
       try {
-        const res = await fetch("http://localhost:8000/api/market/sofr");
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const res = await fetch(`${apiBase}/api/market/sofr`);
         if (res.ok) {
           const data = await res.json();
           setSofr(data.rate.toFixed(2) + "%");
@@ -66,7 +67,7 @@ export default function Home() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <MetricCard label="Total ABF Market" value="$20T+" help="Total addressable ABF market" />
         <MetricCard label="Private ABF" value="~$6T" help="Private ABF market size" />
-        <MetricCard label="2024 Private ABS" value="$130B" help="Private ABS issuance in 2024" />
+        <MetricCard label="2025 Private ABS YTD" value="$130B" help="Private ABS issuance in 2025 YTD" />
         <MetricCard label="SOFR" value={sofr} help="Current SOFR rate" />
       </div>
       <hr className="mb-8" />

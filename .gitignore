@@ -49,4 +49,8 @@ next-env.d.ts
 Thumbs.db
 .DS_Store
 
+# Windows reserved names
+nul
+NUL
+
 

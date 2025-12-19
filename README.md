@@ -49,3 +49,4 @@ Configure via `NEXT_PUBLIC_API_URL` environment variable.
 
 **For AI Assistants:** See `.cursorrules` and `_context/` folder for project context.
 
+

@@ -42,6 +42,9 @@ next-env.d.ts
 *.swo
 *~
 
+# Claude/Cursor local settings
+.claude/settings.local.json
+
 # OS
 Thumbs.db
 .DS_Store

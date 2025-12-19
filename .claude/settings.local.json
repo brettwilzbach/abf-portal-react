@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(Get-ChildItem -Path \"I:\\\\BW Code\\\\Bain_Streamlit\\\\abf-portal-react\\\\src\" -Recurse -Name)"
-    ]
-  }
-}

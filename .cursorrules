@@ -1,0 +1,29 @@
+# Cursor Rules for ABF Portal React
+
+## Context Files
+- Read `_context/MIGRATION_REVIEW.md` for complete project status
+- Read `_context/PROJECT_STATUS.md` for quick status reference
+- Read `_context/AI_RULES.md` for coding guidelines
+- Read `_context/Bain_ABF_Portal_Spec.md` for product requirements
+
+## Current Project Status
+- ✅ All 4 main pages are fully implemented (Market Tracker, Spread Monitor, Deal Analyzer, Waterfall Modeler)
+- ✅ Using mock data - ready for FastAPI backend integration
+- ✅ API client defined in `src/lib/api.ts`
+- ✅ No linting errors
+
+## Key Files
+- Market Tracker: `src/app/market/page.tsx`
+- Spread Monitor: `src/app/spreads/page.tsx`
+- Deal Analyzer: `src/app/analyzer/page.tsx`
+- Waterfall Modeler: `src/app/waterfall/page.tsx`
+- API Client: `src/lib/api.ts`
+- Types: `src/types/market.ts`
+
+## Next Steps
+1. Connect hooks to FastAPI backend
+2. Add Recharts visualizations
+3. Enhance error handling
+
+See `_context/MIGRATION_REVIEW.md` for detailed information.
+

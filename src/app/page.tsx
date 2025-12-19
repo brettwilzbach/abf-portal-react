@@ -40,19 +40,18 @@ function ModuleCard({ emoji, title, description, features }: { emoji: string; ti
 
 export default function Home() {
   const [sofr, setSofr] = useState("4.33%");
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     async function fetchSofr() {
-      setLoading(true);
       try {
         const res = await fetch("http://localhost:8000/api/market/sofr");
         if (res.ok) {
           const data = await res.json();
           setSofr(data.rate.toFixed(2) + "%");
         }
-      } catch {}
-      setLoading(false);
+      } catch {
+        // Keep default value if fetch fails
+      }
     }
     fetchSofr();
   }, []);
@@ -68,7 +67,7 @@ export default function Home() {
         <MetricCard label="Total ABF Market" value="$20T+" help="Total addressable ABF market" />
         <MetricCard label="Private ABF" value="~$6T" help="Private ABF market size" />
         <MetricCard label="2024 Private ABS" value="$130B" help="Private ABS issuance in 2024" />
-        <MetricCard label="SOFR" value={loading ? "..." : sofr} help="Current SOFR rate" />
+        <MetricCard label="SOFR" value={sofr} help="Current SOFR rate" />
       </div>
       <hr className="mb-8" />
       <h2 className="text-xl font-semibold text-[#1E3A5F] mb-4">Portal Modules</h2>

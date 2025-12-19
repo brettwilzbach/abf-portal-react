@@ -1,5 +1,7 @@
 # AI Rules for ABF Portal React Project
 
+> **📋 Project Status:** See `_context/MIGRATION_REVIEW.md` for complete implementation status and `_context/PROJECT_STATUS.md` for quick reference.
+
 ## Environment (Non-Negotiable)
 
 - **OS:** Windows
@@ -11,9 +13,14 @@
 ## Project Structure
 
 - **App root:** `abf-portal-react/`
-- Context and specs live in `_context/`
+- **Context files:** `_context/` folder contains:
+  - `MIGRATION_REVIEW.md` - Complete project status and implementation details
+  - `PROJECT_STATUS.md` - Quick status reference
+  - `Bain_ABF_Portal_Spec.md` - Product specification
+  - `AI_RULES.md` - This file
 - Do NOT modify files outside `src/` unless asked
 - Prefer editing existing files over creating new ones
+- **Current Status:** All pages implemented with mock data, ready for backend integration
 
 ## Dependencies
 

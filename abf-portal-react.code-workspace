@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"git.autoRepositoryDetection": true,
+		"git.scanRepositories": [
+			"C:\\Users\\bwilzbach\\Documents\\abf-portal-react"
+		]
+	}
+}
+
+

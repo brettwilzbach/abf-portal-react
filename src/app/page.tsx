@@ -39,7 +39,7 @@ function ModuleCard({ emoji, title, description, features }: { emoji: string; ti
 }
 
 export default function Home() {
-  const [sofr, setSofr] = useState("4.33%");
+  const [sofr, setSofr] = useState("3.69%");
 
   useEffect(() => {
     async function fetchSofr() {

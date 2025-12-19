@@ -6,6 +6,12 @@
 - Read `_context/AI_RULES.md` for coding guidelines
 - Read `_context/Bain_ABF_Portal_Spec.md` for product requirements
 
+## Git Configuration
+- **Repository:** `https://github.com/brettwilzbach/abf-portal-react.git`
+- **Git Username:** `brettwilzbach`
+- **Git Email:** `brettwilzbach@users.noreply.github.com`
+- Git is configured locally for this repository
+
 ## Current Project Status
 - ✅ All 4 main pages are fully implemented (Market Tracker, Spread Monitor, Deal Analyzer, Waterfall Modeler)
 - ✅ Using mock data - ready for FastAPI backend integration

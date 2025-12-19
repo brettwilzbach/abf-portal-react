@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { TrendingUp, TrendingDown, Minus, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { TrendingUp, TrendingDown, Minus, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { isBloombergAvailable } from '@/lib/bloomberg';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -71,6 +72,19 @@ function formatChange(value: number): string {
 
 export default function SpreadMonitorPage() {
   const [sectorFilter, setSectorFilter] = useState<string>('All');
+  const [dataSource, setDataSource] = useState<'mock' | 'bloomberg'>('mock');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const checkBloomberg = useCallback(async () => {
+    setIsLoading(true);
+    const available = await isBloombergAvailable();
+    setDataSource(available ? 'bloomberg' : 'mock');
+    setIsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    checkBloomberg();
+  }, [checkBloomberg]);
 
   const filteredSpreads = sectorFilter === 'All'
     ? MOCK_SPREADS
@@ -83,8 +97,43 @@ export default function SpreadMonitorPage() {
     <div className="p-8 max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[#1E3A5F] mb-2">Spread Monitor</h1>
-        <p className="text-gray-600">Track relative value across structured credit sectors</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-[#1E3A5F] mb-2">Spread Monitor</h1>
+            <p className="text-gray-600">Track relative value across structured credit sectors</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Data Source Indicator */}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
+              dataSource === 'bloomberg'
+                ? 'bg-green-100 text-green-700 border border-green-300'
+                : 'bg-amber-100 text-amber-700 border border-amber-300'
+            }`}>
+              {dataSource === 'bloomberg' ? (
+                <>
+                  <Wifi className="h-4 w-4" />
+                  <span>Bloomberg Live</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-4 w-4" />
+                  <span>Demo Data</span>
+                </>
+              )}
+            </div>
+            {/* Refresh Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={checkBloomberg}
+              disabled={isLoading}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? 'Loading...' : 'Refresh'}
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -255,7 +304,10 @@ export default function SpreadMonitorPage() {
       {/* Footer */}
       <div className="border-t pt-4 mt-6">
         <div className="flex justify-between items-center text-sm text-gray-500">
-          <span>Data Source: Mock Data (Bloomberg/FRED integration pending)</span>
+          <span>
+            Data Source: {dataSource === 'bloomberg' ? 'Bloomberg Terminal (Live)' : 'Demo Data'}
+            {dataSource === 'mock' && ' • Start Bloomberg MCP server for live data'}
+          </span>
           <span className="font-medium text-[#1E3A5F]">Bain Capital Credit | For Consideration by Brett Wilzbach</span>
         </div>
       </div>

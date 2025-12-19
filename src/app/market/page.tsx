@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Download, Filter } from 'lucide-react';
+import { Search, Download, Filter, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { useMarketData } from '@/hooks/useMarketData';
 import { COLLATERAL_TYPES, RATINGS, CollateralType, Rating } from '@/types/market';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,7 +46,7 @@ function getRatingColor(rating: Rating): string {
 }
 
 export default function MarketTrackerPage() {
-  const { deals, filters, stats, updateFilter, resetFilters } = useMarketData();
+  const { deals, filters, stats, updateFilter, resetFilters, isLoading, dataSource, refresh } = useMarketData();
   const [showFilters, setShowFilters] = useState(true);
 
   const handleExportCSV = () => {
@@ -77,8 +77,43 @@ export default function MarketTrackerPage() {
     <div className="p-8 max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[#1E3A5F] mb-2">Market Tracker</h1>
-        <p className="text-gray-600">Track new issuance and deal flow across structured credit sectors</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-[#1E3A5F] mb-2">Market Tracker</h1>
+            <p className="text-gray-600">Track new issuance and deal flow across structured credit sectors</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Data Source Indicator */}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
+              dataSource === 'bloomberg'
+                ? 'bg-green-100 text-green-700 border border-green-300'
+                : 'bg-amber-100 text-amber-700 border border-amber-300'
+            }`}>
+              {dataSource === 'bloomberg' ? (
+                <>
+                  <Wifi className="h-4 w-4" />
+                  <span>Bloomberg Live</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-4 w-4" />
+                  <span>Demo Data</span>
+                </>
+              )}
+            </div>
+            {/* Refresh Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refresh}
+              disabled={isLoading}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? 'Loading...' : 'Refresh'}
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -246,7 +281,10 @@ export default function MarketTrackerPage() {
       {/* Footer */}
       <div className="border-t pt-4 mt-6">
         <div className="flex justify-between items-center text-sm text-gray-500">
-          <span>Data Source: Mock Data (Bloomberg MCAL integration pending)</span>
+          <span>
+            Data Source: {dataSource === 'bloomberg' ? 'Bloomberg Terminal (Live)' : 'Demo Data'}
+            {dataSource === 'mock' && ' • Start Bloomberg MCP server for live data'}
+          </span>
           <span className="font-medium text-[#1E3A5F]">Bain Capital Credit | For Consideration by Brett Wilzbach</span>
         </div>
       </div>

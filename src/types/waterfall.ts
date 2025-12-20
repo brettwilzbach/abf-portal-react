@@ -17,15 +17,17 @@ export interface TrancheConfig {
 }
 
 // =============================================================================
-// TRIGGER CONFIGURATION (includes ARD)
+// TRIGGER CONFIGURATION (includes ARD and INFO)
 // =============================================================================
 
-export type TriggerType = 'OC' | 'IC' | 'CNL' | 'DSCR' | 'ARD';
+// ARD = Anticipated Repayment Date (turbo to seniors post-trigger)
+// INFO = Informational timing marker only (no waterfall effect, e.g., CLO non-call)
+export type TriggerType = 'OC' | 'IC' | 'CNL' | 'DSCR' | 'ARD' | 'INFO';
 
 export interface TriggerConfig {
   name: string;
   type: TriggerType;
-  threshold: number; // For ARD: the month number; for others: percentage threshold
+  threshold: number; // For ARD/INFO: the month number; for others: percentage threshold
   consequence: string;
 }
 
@@ -78,7 +80,9 @@ export interface TrancheSummary {
   totalInterest: number;
   totalPrincipal: number;
   principalLoss: number;
+  interestShortfall: number; // Cumulative interest shortfall (unpaid coupons)
   moic: number;
+  irr: number | null; // Annualized IRR based on modeled cash flows (par)
   wal: number;
 }
 
@@ -103,7 +107,8 @@ export interface ScenarioResult {
   subordination: number;
   moic: number;
   wal: number;
-  yield: number;
+  yield: number | null; // Contractual yield (SOFR + spread) for debt; null for equity
+  irr: number | null; // Annualized IRR from modeled cash flows
   principalLoss: number;
   status: 'safe' | 'impaired' | 'loss';
 }

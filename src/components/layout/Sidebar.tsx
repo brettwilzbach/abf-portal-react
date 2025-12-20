@@ -23,12 +23,14 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Home', href: '/', icon: Home },
-  { label: 'Deal Modeler', href: '/deal-modeler', icon: Calculator },
+  { label: 'Deal Mechanics', href: '/deal-modeler', icon: Calculator },
   { label: 'Spread Monitor', href: '/spreads', icon: TrendingDown },
   { label: 'Market Tracker', href: '/market', icon: Newspaper },
 ];
 
 const resources = [
+  { label: 'Bain Capital Credit', href: 'https://www.baincapitalcredit.com/news' },
+  { label: 'Pitchbook Private Credit', href: 'https://pitchbook.com/tag/private-credit' },
   { label: 'LCD CLO News', href: 'https://www.lcdcomps.com/' },
   { label: 'Creditflux', href: 'https://www.creditflux.com/' },
   { label: 'KBRA ABS Research', href: 'https://www.kbra.com/sectors/abs' },
@@ -41,34 +43,45 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex flex-col h-screen bg-slate-900 text-white transition-all duration-300',
-        isCollapsed ? 'w-16' : 'w-64'
+        'sticky top-0 flex flex-col h-screen bg-slate-900 text-white transition-all duration-300',
+        isCollapsed ? 'w-20' : 'w-80'
       )}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-700">
-        {!isCollapsed && (
-          <div className="flex items-center gap-3">
+      {/* Header - Extended vertically */}
+      <div className="flex flex-col p-4 border-b border-slate-700 min-h-[80px]">
+        <div className="flex items-center justify-between">
+          {!isCollapsed && (
+            <div className="flex items-center gap-3">
+              <Image
+                src="/logo_bain.svg"
+                alt="Bain Capital Credit"
+                width={48}
+                height={48}
+                className="flex-shrink-0"
+              />
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-white leading-tight">Bain Capital Credit</span>
+                <span className="text-xs text-slate-400">Structured Credit Analytics</span>
+              </div>
+            </div>
+          )}
+          {isCollapsed && (
             <Image
               src="/logo_bain.svg"
               alt="Bain Capital Credit"
-              width={40}
-              height={40}
-              className="flex-shrink-0"
+              width={32}
+              height={32}
+              className="mx-auto"
             />
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold text-white leading-tight">Bain Capital Credit</span>
-              <span className="text-xs text-slate-400">Structured Credit Analytics</span>
-            </div>
-          </div>
-        )}
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1 hover:bg-slate-800 rounded"
-          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-        </button>
+          )}
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className={cn("p-1 hover:bg-slate-800 rounded", isCollapsed && "absolute right-2 top-6")}
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+          </button>
+        </div>
       </div>
 
       {/* Navigation */}

@@ -220,3 +220,105 @@ export async function getABFNews(keyword: string = 'ABF', maxArticles: number = 
     return null;
   }
 }
+
+// =============================================================================
+// SNAPSHOT FUNCTIONALITY
+// =============================================================================
+
+export interface BloombergSnapshot {
+  timestamp: string;
+  spreads: BloombergData | null;
+  deals: BloombergDeal[] | null;
+  news: ABFNewsArticle[] | null;
+}
+
+const SNAPSHOT_KEY = 'bloomberg-snapshot';
+
+/**
+ * Save Bloomberg data snapshot to localStorage
+ * This allows sharing the portal with people who don't have Bloomberg access
+ */
+export function saveBloombergSnapshot(snapshot: BloombergSnapshot): void {
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    console.error('Failed to save Bloomberg snapshot:', error);
+  }
+}
+
+/**
+ * Load Bloomberg snapshot from localStorage
+ */
+export function loadBloombergSnapshot(): BloombergSnapshot | null {
+  try {
+    const data = localStorage.getItem(SNAPSHOT_KEY);
+    if (!data) return null;
+    return JSON.parse(data) as BloombergSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if a snapshot exists
+ */
+export function hasBloombergSnapshot(): boolean {
+  return localStorage.getItem(SNAPSHOT_KEY) !== null;
+}
+
+/**
+ * Get snapshot timestamp in a readable format
+ */
+export function getSnapshotTimestamp(): string | null {
+  const snapshot = loadBloombergSnapshot();
+  if (!snapshot) return null;
+  try {
+    const date = new Date(snapshot.timestamp);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return snapshot.timestamp;
+  }
+}
+
+/**
+ * Clear the saved snapshot
+ */
+export function clearBloombergSnapshot(): void {
+  localStorage.removeItem(SNAPSHOT_KEY);
+}
+
+/**
+ * Export snapshot to a downloadable JSON file
+ */
+export function exportSnapshotToFile(snapshot: BloombergSnapshot): void {
+  const dataStr = JSON.stringify(snapshot, null, 2);
+  const blob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `abf-portal-snapshot-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Import snapshot from a JSON file
+ * Returns the parsed snapshot or null if invalid
+ */
+export function importSnapshotFromJson(jsonString: string): BloombergSnapshot | null {
+  try {
+    const data = JSON.parse(jsonString);
+    // Basic validation
+    if (!data.timestamp) return null;
+    return data as BloombergSnapshot;
+  } catch {
+    return null;
+  }
+}

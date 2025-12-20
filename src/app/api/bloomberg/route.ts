@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * Call an MCP tool on the Bloomberg server
- * MCP uses JSON-RPC 2.0 over HTTP POST to /messages endpoint
+ * MCP uses JSON-RPC 2.0 over HTTP POST to /messages endpoint with SSE for responses
  */
 async function callMcpTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
   // First, establish SSE connection and get session
@@ -106,7 +106,6 @@ async function callMcpTool(toolName: string, args: Record<string, unknown>): Pro
 
     for (const line of lines) {
       if (line.startsWith('event: endpoint')) {
-        // Next data line contains the URL
         continue;
       }
       if (line.startsWith('data: ') && !messagesUrl) {
@@ -121,18 +120,61 @@ async function callMcpTool(toolName: string, args: Record<string, unknown>): Pro
     if (messagesUrl) break;
   }
 
-  // Cancel the SSE stream
-  reader.cancel();
-
   if (!messagesUrl) {
-    // Fallback to default messages endpoint
+    reader.cancel();
     messagesUrl = `${BLOOMBERG_SERVER}/messages`;
+  } else if (messagesUrl.startsWith('/')) {
+    messagesUrl = `${BLOOMBERG_SERVER}${messagesUrl}`;
   }
 
+  // Send initialize request first (required by MCP protocol)
+  const initRequest = {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'abf-portal', version: '1.0.0' },
+    },
+  };
+
+  await fetch(messagesUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(initRequest),
+  });
+
+  // Wait for initialization response via SSE
+  let initComplete = false;
+  const startTime = Date.now();
+  while (!initComplete && Date.now() - startTime < 5000) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    const text = decoder.decode(value);
+    if (text.includes('"method":"initialize"') || text.includes('"id":1')) {
+      initComplete = true;
+    }
+  }
+
+  // Send initialized notification
+  const initializedNotification = {
+    jsonrpc: '2.0',
+    method: 'notifications/initialized',
+  };
+
+  await fetch(messagesUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(initializedNotification),
+  });
+
   // Now call the tool via JSON-RPC
+  const toolId = Date.now();
   const rpcRequest = {
     jsonrpc: '2.0',
-    id: Date.now(),
+    id: toolId,
     method: 'tools/call',
     params: {
       name: toolName,
@@ -140,27 +182,51 @@ async function callMcpTool(toolName: string, args: Record<string, unknown>): Pro
     },
   };
 
-  const toolResponse = await fetch(messagesUrl, {
+  await fetch(messagesUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(rpcRequest),
     signal: AbortSignal.timeout(30000),
   });
 
-  if (!toolResponse.ok) {
-    throw new Error(`Tool call failed: ${toolResponse.status}`);
+  // Read the SSE stream for the tool response
+  const responseStartTime = Date.now();
+  while (Date.now() - responseStartTime < 30000) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    const text = decoder.decode(value);
+    const lines = text.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6).trim();
+        if (!data || data === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          // Check if this is our tool response
+          if (parsed.id === toolId && parsed.result) {
+            reader.cancel();
+            // MCP returns result in content array
+            if (parsed.result.content?.[0]?.text) {
+              return JSON.parse(parsed.result.content[0].text);
+            }
+            return parsed.result;
+          }
+          if (parsed.id === toolId && parsed.error) {
+            reader.cancel();
+            throw new Error(parsed.error.message || 'Tool call failed');
+          }
+        } catch (e) {
+          // Continue reading if parse fails
+          if (e instanceof Error && e.message !== 'Tool call failed') continue;
+          throw e;
+        }
+      }
+    }
   }
 
-  const result = await toolResponse.json();
-
-  // MCP returns result in content array
-  if (result.result?.content?.[0]?.text) {
-    return JSON.parse(result.result.content[0].text);
-  }
-
-  if (result.error) {
-    throw new Error(result.error.message || 'Tool call failed');
-  }
-
-  return result;
+  reader.cancel();
+  throw new Error('Tool call timed out');
 }

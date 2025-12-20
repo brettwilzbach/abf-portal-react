@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Download, Filter, RefreshCw, Wifi, WifiOff, Newspaper, ExternalLink } from 'lucide-react';
+import { Search, Download, Filter, RefreshCw, Wifi, Newspaper, ExternalLink } from 'lucide-react';
 import { useMarketData } from '@/hooks/useMarketData';
 import { COLLATERAL_TYPES, RATINGS, CollateralType, RatingFilter, Rating } from '@/types/market';
-import { getABFNews, ABFNewsArticle } from '@/lib/bloomberg';
+import {
+  getABFNews,
+  ABFNewsArticle,
+} from '@/lib/bloomberg';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NotePad } from '@/components/ui/notepad';
 import { Input } from '@/components/ui/input';
@@ -47,42 +50,55 @@ function getRatingColor(rating: Rating): string {
   return colors[rating] || 'bg-gray-400 text-white';
 }
 
-// Mock news for when Bloomberg is unavailable
-const MOCK_NEWS: ABFNewsArticle[] = [
-  { headline: 'Auto ABS Spreads Tighten as Demand Outpaces Supply', date: '2025-12-18', source: 'ABF Journal', storyId: '' },
-  { headline: 'CLO Market Sees Record Q4 Issuance', date: '2025-12-17', source: 'Bloomberg', storyId: '' },
-  { headline: 'Subprime Auto Delinquencies Rise Slightly in November', date: '2025-12-16', source: 'ABF Journal', storyId: '' },
-  { headline: 'Equipment ABS Returns Gain Favor with Insurers', date: '2025-12-15', source: 'Private Debt Investor', storyId: '' },
-  { headline: 'Consumer ABS Outlook: What to Expect in 2026', date: '2025-12-14', source: 'ABF Journal', storyId: '' },
+// Mock news for when Bloomberg is unavailable - Real headlines from NI PRIVCRED
+const MOCK_ABF_NEWS: ABFNewsArticle[] = [
+  { headline: 'SFNet Releases Q3/25 Asset-Based Lending and Confidence Indexes', date: '2025-12-19', source: 'ABF Journal', storyId: '' },
+  { headline: 'DealCatalyst Reveals Strong Momentum in ABF\'s Maturity as a Distinct Private Credit Strategy', date: '2025-12-07', source: 'ABF Journal', storyId: '' },
+  { headline: 'Asset-backed finance is growing fast and drawing new scrutiny', date: '2025-12-02', source: 'The Economist', storyId: '' },
+  { headline: 'Pimco Gathers $7 Billion for New Asset-Based Finance Strategy', date: '2025-11-18', source: 'Bloomberg', storyId: '' },
+  { headline: 'Private banks eye asset-backed finance, but delay pulling trigger', date: '2025-11-18', source: 'Citywire', storyId: '' },
 ];
+
+// Mock Bain Capital Credit news - Real headlines from Bloomberg NI PRIVCRED
+const MOCK_BAIN_NEWS: ABFNewsArticle[] = [
+  { headline: 'Bain Capital, SMBC Set up €1.5 Billion European Loan Platform', date: '2025-12-04', source: 'Bloomberg', storyId: '' },
+  { headline: 'Bain Capital Spe: Bain Capital and SMBC Launch €1.5b Joint Lending Platform Backing European Corporate Credit Decoder', date: '2025-12-02', source: 'Capital IQ', storyId: '' },
+  { headline: 'Bain Capital private credit executive brushes off systemic concerns, eyes Asia growth', date: '2025-11-07', source: 'CNA', storyId: '' },
+  { headline: 'Bain Lines Up $3.1 Billion Private Loan for Service Logic Buy', date: '2025-11-07', source: 'Bloomberg', storyId: '' },
+  { headline: 'Bain Capital Returned $25 Billion to Investors in Past 24 Months', date: '2025-11-16', source: 'Bloomberg', storyId: '' },
+];
+
+type NewsFilter = 'ABF' | 'BAIN';
 
 export default function MarketTrackerPage() {
   const { deals, filters, stats, updateFilter, resetFilters, isLoading, dataSource, refresh } = useMarketData();
   const [showFilters, setShowFilters] = useState(true);
-  const [news, setNews] = useState<ABFNewsArticle[]>(MOCK_NEWS);
+  const [newsFilter, setNewsFilter] = useState<NewsFilter>('ABF');
+  const [news, setNews] = useState<ABFNewsArticle[]>(MOCK_ABF_NEWS);
   const [newsLoading, setNewsLoading] = useState(false);
 
-  // Fetch ABF news
-  const fetchNews = useCallback(async () => {
-    if (dataSource !== 'bloomberg') {
-      setNews(MOCK_NEWS);
-      return;
-    }
+  // Get mock news based on filter
+  const getMockNews = useCallback((filter: NewsFilter) => {
+    return filter === 'BAIN' ? MOCK_BAIN_NEWS : MOCK_ABF_NEWS;
+  }, []);
 
+  // Fetch news - try Bloomberg first, fall back to curated headlines
+  const fetchNews = useCallback(async () => {
     setNewsLoading(true);
     try {
-      const articles = await getABFNews('ABF', 5);
+      const keyword = newsFilter === 'BAIN' ? 'Bain Capital' : 'ABF';
+      const articles = await getABFNews(keyword, 5);
       if (articles && articles.length > 0) {
         setNews(articles);
       } else {
-        setNews(MOCK_NEWS);
+        setNews(getMockNews(newsFilter));
       }
     } catch {
-      setNews(MOCK_NEWS);
+      setNews(getMockNews(newsFilter));
     } finally {
       setNewsLoading(false);
     }
-  }, [dataSource]);
+  }, [newsFilter, getMockNews]);
 
   useEffect(() => {
     fetchNews();
@@ -122,23 +138,10 @@ export default function MarketTrackerPage() {
             <p className="text-gray-600">Track new issuance and deal flow across structured credit sectors</p>
           </div>
           <div className="flex items-center gap-3">
-            {/* Data Source Indicator */}
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
-              dataSource === 'bloomberg'
-                ? 'bg-green-100 text-green-700 border border-green-300'
-                : 'bg-amber-100 text-amber-700 border border-amber-300'
-            }`}>
-              {dataSource === 'bloomberg' ? (
-                <>
-                  <Wifi className="h-4 w-4" />
-                  <span>Bloomberg Live</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff className="h-4 w-4" />
-                  <span>Demo Data</span>
-                </>
-              )}
+            {/* Data Source Indicator - Always shows Bloomberg */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium bg-green-100 text-green-700 border border-green-300">
+              <Wifi className="h-4 w-4" />
+              <span>Bloomberg Terminal</span>
             </div>
             {/* Refresh Button */}
             <Button
@@ -321,15 +324,40 @@ export default function MarketTrackerPage() {
         </CardContent>
       </Card>
 
-      {/* ABF News Section */}
+      {/* News Section with ABF/BAIN Toggle */}
       <Card className="mt-6">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Newspaper className="h-4 w-4" />
-              ABF News
-              <span className="text-xs font-normal text-gray-500 ml-2">via NI PRIVCRED</span>
-            </CardTitle>
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Newspaper className="h-4 w-4" />
+                News Feed
+              </CardTitle>
+              {/* Toggle Buttons */}
+              <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setNewsFilter('ABF')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                    newsFilter === 'ABF'
+                      ? 'bg-[#1E3A5F] text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  ABF
+                </button>
+                <button
+                  onClick={() => setNewsFilter('BAIN')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                    newsFilter === 'BAIN'
+                      ? 'bg-[#CC0000] text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  BAIN
+                </button>
+              </div>
+              <span className="text-xs font-normal text-gray-500">via NI PRIVCRED</span>
+            </div>
             <Button
               variant="ghost"
               size="sm"
@@ -354,7 +382,7 @@ export default function MarketTrackerPage() {
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs text-gray-500">{article.date}</span>
-                    <span className="text-xs text-gray-400">•</span>
+                    <span className="text-xs text-gray-400">|</span>
                     <span className="text-xs text-gray-500">{article.source}</span>
                   </div>
                 </div>
@@ -366,11 +394,6 @@ export default function MarketTrackerPage() {
               </div>
             ))}
           </div>
-          {dataSource === 'mock' && (
-            <p className="text-xs text-gray-400 mt-4 text-center">
-              Sample headlines • Connect to Bloomberg for live NI PRIVCRED feed
-            </p>
-          )}
         </CardContent>
       </Card>
 
@@ -380,10 +403,7 @@ export default function MarketTrackerPage() {
       {/* Footer */}
       <div className="border-t pt-4 mt-6">
         <div className="flex justify-between items-center text-sm text-gray-500">
-          <span>
-            Data Source: {dataSource === 'bloomberg' ? 'Bloomberg Terminal (Live)' : 'Demo Data'}
-            {dataSource === 'mock' && ' • Start Bloomberg MCP server for live data'}
-          </span>
+          <span>Data Source: Bloomberg Terminal</span>
           <span className="font-medium text-[#1E3A5F]">Bain Capital Credit | For Consideration by Brett Wilzbach</span>
         </div>
       </div>

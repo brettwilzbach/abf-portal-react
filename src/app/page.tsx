@@ -1,113 +1,319 @@
 "use client";
 
 import { useState } from "react";
+import { Calculator, TrendingDown, BarChart3, Building, Home as HomeIcon, Landmark, ChevronDown, Plane, Server, Zap } from "lucide-react";
 
-// ABF Market Data (based on industry research)
-// Colors matched to reference image aesthetic - muted earth tones and teal
-const ABF_MARKET_DATA = {
-  total: 25.3,
-  segments: [
-    {
-      name: "Government Real-Estate Finance",
-      value: 10.1,
-      bgColor: "bg-[#8B7355]",
-      childBg: "bg-[#D4C4B0]",
-      children: [
-        { name: "Agency RMBS", value: 9.0 },
-        { name: "Agency CMBS", value: 1.1 },
-      ],
-    },
-    {
-      name: "Private Real-Estate Finance",
-      value: 9.2,
-      bgColor: "bg-[#C9B896]",
-      childBg: "bg-[#E8DFD0]",
-      children: [
-        { name: "Residential Loans", value: 3.0 },
-        { name: "CRE Loans", value: 4.8 },
-        { name: "Non-Agency CMBS", value: 0.72 },
-        { name: "Non-Agency RMBS", value: 0.71 },
-      ],
-    },
-    {
-      name: "Consumer & Commercial Specialty",
-      value: 6.1,
-      bgColor: "bg-[#6B9B9C]",
-      childBg: "bg-[#B8D4D5]",
-      children: [
-        { name: "Private ABS + Loans", value: 4.5 },
-        { name: "Tradeable ABS", value: 1.6, highlight: true },
-      ],
-    },
-  ],
+// =============================================================================
+// DATA
+// =============================================================================
+
+// ABF Market Data - restructured for horizontal tree
+// Source: Industry estimates (KKR, Guggenheim, SIFMA) - figures rounded for illustration
+const MARKET_SEGMENTS = {
+  govRealEstate: {
+    name: "Government Real-Estate Finance",
+    value: 12.5, // Sum of children: 6.5 + 4.5 + 0.8 + 0.7 = 12.5T
+    icon: Landmark,
+    children: [
+      { name: "Agency MBS/RMBS", value: 6.5 },
+      { name: "Agency CMBS", value: 4.5 },
+      { name: "Non-Agency CMBS", value: 0.8 },
+      { name: "Non-Agency RMBS", value: 0.7 },
+    ],
+  },
+  privateRealEstate: {
+    name: "Private Real-Estate Finance",
+    value: 6.5,
+    icon: Building,
+    children: [], // Private credit, bridge loans, mezzanine
+  },
+  consumerCommercial: {
+    name: "Consumer & Commercial Specialty",
+    value: 6.3,
+    icon: BarChart3,
+    children: [
+      { name: "Private ABS + Loans", value: 4.7 },
+      { name: "Tradeable ABS", value: 1.6 },
+    ],
+  },
 };
 
-// Tradeable ABS Sector Breakdown with 2025 YTD issuance data
+// Total calculated from segments for consistency
+const MARKET_TOTAL = MARKET_SEGMENTS.govRealEstate.value +
+                     MARKET_SEGMENTS.privateRealEstate.value +
+                     MARKET_SEGMENTS.consumerCommercial.value; // = 25.3T
+
+// Tradeable ABS Sector Breakdown (Ex-RMBS/CMBS)
+// Aligned with $1.6T total in Consumer & Commercial Specialty → Tradeable ABS
+// Source: SIFMA ABS outstanding data, 2024 estimates
 const ABS_SECTORS = [
-  { sector: "Prime Auto", balance: 214, issuance2025: 45, color: "bg-[#1E3A5F]" },
-  { sector: "Credit Card", balance: 126, issuance2025: 28, color: "bg-[#2E5A8F]" },
-  { sector: "Subprime Auto", balance: 100, issuance2025: 22, color: "bg-[#4A7AB0]" },
-  { sector: "Digital Infrastructure", balance: 70, issuance2025: 12, color: "bg-[#6B8BB8]" },
-  { sector: "Student Loan (Non-FFELP)", balance: 68, issuance2025: 8, color: "bg-[#8BA4C7]" },
-  { sector: "Consumer Unsecured", balance: 61, issuance2025: 15, color: "bg-[#A8BDD4]" },
-  { sector: "Solar", balance: 30, issuance2025: 6, color: "bg-[#C4D4E2]" },
-  { sector: "Home Improvement", balance: 10, issuance2025: 3, color: "bg-[#D9E4EF]" },
+  { sector: "Prime Auto", balance: 380, issuance: 85 },
+  { sector: "Credit Card", balance: 320, issuance: 68 },
+  { sector: "Subprime Auto", balance: 215, issuance: 52 },
+  { sector: "Student Loan", balance: 185, issuance: 25 },
+  { sector: "Equipment", balance: 145, issuance: 38 },
+  { sector: "Consumer Unsecured", balance: 120, issuance: 40 },
+  { sector: "Digital Infrastructure", balance: 120, issuance: 32 },
+  { sector: "Solar/Renewables", balance: 40, issuance: 15 },
+  { sector: "Aviation/Transport", balance: 35, issuance: 12 },
+  { sector: "Other Esoteric", balance: 40, issuance: 11 },
 ];
+// Total: 380+320+215+185+145+120+120+40+35+40 = 1,600B = $1.6T
 
-const totalABSSectors = ABS_SECTORS.reduce((sum, s) => sum + s.balance, 0);
-const totalIssuance2025 = ABS_SECTORS.reduce((sum, s) => sum + s.issuance2025, 0);
+const totalOutstanding = ABS_SECTORS.reduce((sum, s) => sum + s.balance, 0);
+const totalIssuance = ABS_SECTORS.reduce((sum, s) => sum + s.issuance, 0);
 
-function Accordion({ title, children }: { title: string; children: React.ReactNode }) {
-  const [isOpen, setIsOpen] = useState(false);
+// =============================================================================
+// COMPONENTS
+// =============================================================================
+
+function MarketHierarchy() {
+  // Calculate percentages for the donut chart
+  const segments = [
+    { name: 'Gov RE', value: MARKET_SEGMENTS.govRealEstate.value, color: '#1E3A5F' },
+    { name: 'Private RE', value: MARKET_SEGMENTS.privateRealEstate.value, color: '#2E5A8F' },
+    { name: 'Consumer', value: MARKET_SEGMENTS.consumerCommercial.value, color: '#C9B896' },
+  ];
+
+  // SVG donut chart calculations
+  const total = segments.reduce((sum, s) => sum + s.value, 0);
+  let cumulativePercent = 0;
+
+  const getCoordinatesForPercent = (percent: number) => {
+    const x = Math.cos(2 * Math.PI * percent);
+    const y = Math.sin(2 * Math.PI * percent);
+    return [x, y];
+  };
+
   return (
-    <div className="border border-gray-200 rounded-lg mb-2">
-      <button className="w-full px-4 py-3 text-left font-medium flex justify-between items-center hover:bg-gray-50" onClick={() => setIsOpen(!isOpen)}>
-        {title}
-        <span className="text-gray-400">{isOpen ? "-" : "+"}</span>
-      </button>
-      {isOpen && <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 text-sm text-gray-700">{children}</div>}
+    <div className="bg-white rounded-lg border border-slate-200 p-8 mb-6">
+      <h2 className="text-lg font-semibold text-slate-700 mb-6">Asset-Backed Finance Market Universe</h2>
+
+      {/* Top section: Donut chart + headline */}
+      <div className="flex items-center justify-center gap-12 mb-8">
+        {/* Donut Chart */}
+        <div className="relative">
+          <svg width="180" height="180" viewBox="-1 -1 2 2" style={{ transform: 'rotate(-90deg)' }}>
+            {segments.map((segment, i) => {
+              const percent = segment.value / total;
+              const [startX, startY] = getCoordinatesForPercent(cumulativePercent);
+              cumulativePercent += percent;
+              const [endX, endY] = getCoordinatesForPercent(cumulativePercent);
+              const largeArcFlag = percent > 0.5 ? 1 : 0;
+              const pathData = [
+                `M ${startX} ${startY}`,
+                `A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY}`,
+                `L 0 0`,
+              ].join(' ');
+              return <path key={i} d={pathData} fill={segment.color} />;
+            })}
+            {/* Inner circle for donut effect */}
+            <circle cx="0" cy="0" r="0.6" fill="white" />
+          </svg>
+          {/* Center text */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <p className="text-3xl font-bold text-[#1E3A5F]">${MARKET_TOTAL}T</p>
+            <p className="text-xs text-slate-500">Total Market</p>
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div className="space-y-3">
+          {segments.map((segment) => (
+            <div key={segment.name} className="flex items-center gap-3">
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: segment.color }} />
+              <div>
+                <p className="text-sm font-medium text-slate-700">{segment.name}</p>
+                <p className="text-lg font-bold text-[#1E3A5F]">${segment.value}T</p>
+              </div>
+              <p className="text-sm text-slate-500 ml-2">({Math.round((segment.value / total) * 100)}%)</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Horizontal tree structure - larger */}
+      <div className="flex items-start gap-6">
+        {/* Left column - Gov RE & Private RE */}
+        <div className="flex-1 space-y-4">
+          {/* Government Real Estate */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 bg-[#1E3A5F] text-white px-4 py-3 rounded-lg min-w-[220px] shadow-sm">
+              <Landmark className="h-5 w-5" />
+              <div>
+                <p className="text-sm font-medium leading-tight">Government Real-Estate Finance</p>
+                <p className="text-lg font-bold">${MARKET_SEGMENTS.govRealEstate.value}T</p>
+              </div>
+            </div>
+            {/* Connector line */}
+            <div className="w-10 h-px bg-slate-300" />
+            {/* Children */}
+            <div className="flex-1 space-y-2">
+              {MARKET_SEGMENTS.govRealEstate.children.map((child) => (
+                <div key={child.name} className="flex items-center gap-3 bg-[#C9B896] text-slate-800 px-4 py-2 rounded-lg text-sm shadow-sm">
+                  <HomeIcon className="h-4 w-4" />
+                  <span className="font-medium">{child.name}</span>
+                  <span className="font-bold ml-auto">${child.value >= 1 ? child.value + 'T' : (child.value * 1000).toFixed(0) + 'B'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Private Real Estate */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 bg-[#2E5A8F] text-white px-4 py-3 rounded-lg min-w-[220px] shadow-sm">
+              <Building className="h-5 w-5" />
+              <div>
+                <p className="text-sm font-medium leading-tight">Private Real-Estate Finance</p>
+                <p className="text-lg font-bold">${MARKET_SEGMENTS.privateRealEstate.value}T</p>
+              </div>
+            </div>
+            {/* Connector line for visual balance */}
+            <div className="w-10 h-px bg-slate-300" />
+            <div className="flex-1 flex items-center">
+              <p className="text-sm text-slate-500 italic">Private credit, bridge loans, mezzanine</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Right column - Consumer & Commercial */}
+        <div className="flex-1">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 bg-[#1E3A5F] text-white px-4 py-3 rounded-lg min-w-[240px] shadow-sm">
+              <BarChart3 className="h-5 w-5" />
+              <div>
+                <p className="text-sm font-medium leading-tight">Consumer & Commercial Specialty</p>
+                <p className="text-lg font-bold">${MARKET_SEGMENTS.consumerCommercial.value}T</p>
+              </div>
+            </div>
+            {/* Connector line */}
+            <div className="w-10 h-px bg-slate-300" />
+            {/* Children */}
+            <div className="flex-1 space-y-2">
+              {MARKET_SEGMENTS.consumerCommercial.children.map((child) => (
+                <div
+                  key={child.name}
+                  className="flex items-center gap-3 px-4 py-2 rounded-lg text-sm shadow-sm bg-[#C9B896] text-slate-800"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  <span className="font-medium">{child.name}</span>
+                  <span className="font-bold ml-auto">${child.value}T</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-400 mt-6 text-center">Source: SIFMA, KKR, Guggenheim | Figures rounded for illustration</p>
     </div>
   );
 }
 
-function ModuleCard({ title, description, features }: { title: string; description: string; features: string[] }) {
+function PublicVsPrivateChart() {
+  // Illustrative 2024 full-year issuance by channel
+  // Source: SIFMA, LCD, PitchBook estimates
+  const data = [
+    { category: 'Auto ABS', public: 72, private: 45 },
+    { category: 'Consumer', public: 54, private: 38 },
+    { category: 'Equipment', public: 22, private: 28 },
+    { category: 'CLO/Loans', public: 98, private: 65 },
+    { category: 'Real Estate', public: 35, private: 82 },
+    { category: 'Specialty', public: 18, private: 32 },
+  ];
+
+  const totalPublic = data.reduce((sum, d) => sum + d.public, 0);
+  const totalPrivate = data.reduce((sum, d) => sum + d.private, 0);
+  const maxValue = Math.max(...data.map(d => Math.max(d.public, d.private)));
+
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-all border border-slate-100 hover:border-slate-200">
-      <h3 className="text-lg font-semibold text-[#1E3A5F] mb-2">{title}</h3>
-      <p className="text-sm text-slate-600 font-medium mb-3">{description}</p>
-      <ul className="text-sm text-slate-500 space-y-1.5">
-        {features.map((f, i) => <li key={i} className="flex items-start gap-2"><span className="text-[#1E3A5F] mt-0.5">-</span>{f}</li>)}
-      </ul>
+    <div className="bg-white rounded-lg border border-slate-200 p-5 h-full">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-semibold text-slate-700">ABF Issuance: Public vs Private</h2>
+          <p className="text-xs text-slate-500">2024 full-year estimates ($B)</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-center">
+            <p className="text-lg font-bold text-[#1E3A5F]">${totalPublic}B</p>
+            <p className="text-xs text-slate-500">Public</p>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-[#6B9B9C]">${totalPrivate}B</p>
+            <p className="text-xs text-slate-500">Private</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Side by side bar chart - more compact */}
+      <div className="space-y-2.5">
+        {data.map((item) => (
+          <div key={item.category} className="flex items-center gap-3">
+            <div className="w-20 text-xs font-medium text-slate-700 text-right">{item.category}</div>
+            <div className="flex-1 flex items-center gap-1">
+              {/* Public bar */}
+              <div className="flex-1 flex justify-end">
+                <div className="flex items-center gap-1 w-full justify-end">
+                  <span className="text-xs font-semibold text-[#1E3A5F] w-6 text-right">{item.public}</span>
+                  <div className="h-5 bg-[#1E3A5F] rounded-l" style={{ width: `${(item.public / maxValue) * 100}%` }} />
+                </div>
+              </div>
+              {/* Divider */}
+              <div className="w-px h-6 bg-slate-300" />
+              {/* Private bar */}
+              <div className="flex-1">
+                <div className="flex items-center gap-1">
+                  <div className="h-5 bg-[#6B9B9C] rounded-r" style={{ width: `${(item.private / maxValue) * 100}%` }} />
+                  <span className="text-xs font-semibold text-[#6B9B9C] w-6">{item.private}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center justify-center gap-6 mt-4 pt-3 border-t border-slate-100">
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 bg-[#1E3A5F] rounded" />
+          <span className="text-xs text-slate-600">Public (Tradeable)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 bg-[#6B9B9C] rounded" />
+          <span className="text-xs text-slate-600">Private (Bilateral)</span>
+        </div>
+      </div>
     </div>
   );
 }
-
-type ViewMode = 'balance' | 'issuance';
 
 function ABSSectorChart() {
-  const [viewMode, setViewMode] = useState<ViewMode>('balance');
+  const [viewMode, setViewMode] = useState<'outstanding' | 'issuance'>('outstanding');
 
-  const maxBalance = 220;
-  const maxIssuance = 50;
-  const currentMax = viewMode === 'balance' ? maxBalance : maxIssuance;
-  const total = viewMode === 'balance' ? totalABSSectors : totalIssuance2025;
+  const data = viewMode === 'outstanding'
+    ? ABS_SECTORS.map(s => ({ ...s, value: s.balance }))
+    : ABS_SECTORS.map(s => ({ ...s, value: s.issuance }));
+
+  const total = viewMode === 'outstanding' ? totalOutstanding : totalIssuance;
+  // Dynamic max based on actual data to prevent bar overflow
+  const maxValue = Math.max(...data.map(d => d.value));
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6 border border-slate-100 mb-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="bg-white rounded-lg border border-slate-200 p-5 h-full">
+      {/* Header with toggle */}
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-[#1E3A5F]">Tradeable ABS by Sector</h2>
-          <p className="text-sm text-slate-500">
-            {viewMode === 'balance' ? 'Current outstanding balance' : '2025 YTD issuance'}
-          </p>
+          <h2 className="text-base font-semibold text-slate-700">Tradeable ABS by Sector</h2>
+          <p className="text-xs text-slate-500">Ex-RMBS/CMBS | Public market breakdown</p>
         </div>
+
         <div className="flex items-center gap-3">
           {/* Toggle */}
-          <div className="flex bg-slate-100 rounded-lg p-0.5">
+          <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5">
             <button
-              onClick={() => setViewMode('balance')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                viewMode === 'balance'
+              onClick={() => setViewMode('outstanding')}
+              className={`px-2.5 py-1 text-xs font-medium rounded-full transition-all ${
+                viewMode === 'outstanding'
                   ? 'bg-white text-[#1E3A5F] shadow-sm'
                   : 'text-slate-500 hover:text-slate-700'
               }`}
@@ -116,46 +322,41 @@ function ABSSectorChart() {
             </button>
             <button
               onClick={() => setViewMode('issuance')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+              className={`px-2.5 py-1 text-xs font-medium rounded-full transition-all ${
                 viewMode === 'issuance'
-                  ? 'bg-white text-[#6B9B9C] shadow-sm'
+                  ? 'bg-white text-[#1E3A5F] shadow-sm'
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              2025 Issuance
+              Issuance
             </button>
           </div>
-          <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${
-            viewMode === 'balance'
-              ? 'bg-[#1E3A5F]/10 text-[#1E3A5F]'
-              : 'bg-[#6B9B9C]/10 text-[#6B9B9C]'
-          }`}>
-            ${total}B Total
+
+          {/* Total */}
+          <div className="text-right">
+            <p className="text-lg font-bold text-[#1E3A5F]">${total}B</p>
+            <p className="text-xs text-slate-500">Total</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-        {ABS_SECTORS.map((sector, idx) => {
-          const value = viewMode === 'balance' ? sector.balance : sector.issuance2025;
-          const barColor = viewMode === 'balance' ? sector.color : 'bg-[#6B9B9C]';
-
+      {/* Single column for compact view */}
+      <div className="space-y-2">
+        {data.map((sector) => {
+          const pct = Math.round((sector.value / total) * 100);
           return (
-            <div key={sector.sector} className="group">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm font-medium text-slate-700">{sector.sector}</span>
-                <span className={`text-sm font-bold ${viewMode === 'balance' ? 'text-[#1E3A5F]' : 'text-[#6B9B9C]'}`}>
-                  ${value}B
-                </span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-md h-6 overflow-hidden">
+            <div key={sector.sector} className="flex items-center gap-3">
+              <span className="text-xs font-medium text-slate-700 w-28 truncate">{sector.sector}</span>
+              <div className="flex-1 bg-slate-100 rounded h-4 overflow-hidden">
                 <div
-                  className={`${barColor} h-6 rounded-md transition-all duration-500 ease-out group-hover:opacity-80`}
-                  style={{
-                    width: `${(value / currentMax) * 100}%`,
-                  }}
+                  className="bg-[#C9B896] h-4 rounded transition-all duration-500"
+                  style={{ width: `${(sector.value / maxValue) * 100}%` }}
                 />
               </div>
+              <span className="text-xs font-semibold text-[#1E3A5F] w-10 text-right">
+                ${sector.value}B
+              </span>
+              <span className="text-xs text-slate-400 w-8 text-right">{pct}%</span>
             </div>
           );
         })}
@@ -164,126 +365,163 @@ function ABSSectorChart() {
   );
 }
 
+function PortalModules() {
+  const modules = [
+    {
+      icon: Calculator,
+      title: "Deal Mechanics",
+      features: ["Model Structured Credit products", "Compare capital structures", "Run waterfall scenarios"],
+    },
+    {
+      icon: TrendingDown,
+      title: "Spread Monitor",
+      features: ["Track ABS/CLO spreads", "Private vs public credit yields"],
+    },
+    {
+      icon: BarChart3,
+      title: "Market Tracker",
+      features: ["Monitor new issuance", "Filter by collateral type"],
+    },
+  ];
+
+  return (
+    <div className="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 className="text-base font-semibold text-slate-700 mb-4">Portal Modules</h2>
+      <div className="space-y-4">
+        {modules.map((mod) => (
+          <div key={mod.title} className="flex items-start gap-3">
+            <mod.icon className="h-5 w-5 text-[#1E3A5F] mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-slate-800">{mod.title}</p>
+              <ul className="text-sm text-slate-500 mt-1">
+                {mod.features.map((f, i) => (
+                  <li key={i}>&bull; {f}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InfrastructureVisual() {
+  // Tradeable ABS outstanding in each sector (aligned with ABS_SECTORS)
+  const assets = [
+    { icon: Plane, label: 'Aviation', value: '$35B', desc: 'Aircraft ABS' },
+    { icon: Server, label: 'Data Centers', value: '$120B', desc: 'Digital infra ABS' },
+    { icon: Zap, label: 'Renewables', value: '$40B', desc: 'Solar & clean energy' },
+  ];
+
+  return (
+    <div className="rounded-lg p-6 text-white relative overflow-hidden">
+      {/* Airplane background image with overlay */}
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{
+          backgroundImage: `url('https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=800&q=80')`,
+        }}
+      />
+      {/* Dark gradient overlay for readability - lightened to show airplane */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#1E3A5F]/60 via-[#2E5A8F]/50 to-[#1E3A5F]/60" />
+
+      <div className="relative z-10">
+        <h3 className="text-base font-semibold text-white uppercase tracking-wide mb-4 text-center">
+          Transportation & Infrastructure ABS
+        </h3>
+
+        <div className="grid grid-cols-3 gap-4">
+          {assets.map((asset) => {
+            const Icon = asset.icon;
+            return (
+              <div key={asset.label} className="text-center">
+                <div className="w-14 h-14 mx-auto mb-2 rounded-lg bg-white/15 flex items-center justify-center backdrop-blur-sm">
+                  <Icon className="h-7 w-7 text-white" />
+                </div>
+                <p className="text-xl font-bold">{asset.value}</p>
+                <p className="text-sm text-white/80">{asset.label}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="text-sm text-white/70 mt-4 text-center">
+          Hard asset collateral with strong recovery profiles
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function KeyConcepts() {
+  const [openItem, setOpenItem] = useState<string | null>(null);
+
+  const concepts = [
+    { id: 'oc', title: 'OC Test', content: 'Formula: Collateral Value / Outstanding Notes. Ensures enough collateral to cover debt. Typical thresholds: 122% for CLO AAA, 105-110% for ABS.' },
+    { id: 'ic', title: 'IC Test', content: 'Formula: Interest Income / Interest Expense. Ensures income covers interest payments. Typical threshold: 120%.' },
+    { id: 'cnl', title: 'CNL Trigger', content: 'Cumulative Net Loss trigger. When CNL exceeds threshold (e.g., 8-12%), deal switches to sequential pay to protect seniors.' },
+    { id: 'seq', title: 'Sequential vs Pro-Rata', content: 'Sequential pays seniors first. Pro-rata pays proportionally. Deals switch from pro-rata to sequential when triggers breach.' },
+    { id: 'ard', title: 'ARD', content: 'Anticipated Repayment Date: Timing-based trigger. If deal extends past ARD, excess cash flow diverts to accelerate senior amortization.' },
+  ];
+
+  return (
+    <div className="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 className="text-base font-semibold text-slate-700 mb-4">Key Concepts</h2>
+      <div className="space-y-1">
+        {concepts.map((concept) => (
+          <div key={concept.id} className="border-b border-slate-100 last:border-0">
+            <button
+              onClick={() => setOpenItem(openItem === concept.id ? null : concept.id)}
+              className="w-full flex items-center justify-between py-2.5 text-left hover:bg-slate-50 rounded px-2 -mx-2"
+            >
+              <span className="font-medium text-slate-700">{concept.title}</span>
+              <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${openItem === concept.id ? 'rotate-180' : ''}`} />
+            </button>
+            {openItem === concept.id && (
+              <p className="text-sm text-slate-600 pb-3 px-2">{concept.content}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// MAIN PAGE
+// =============================================================================
+
 export default function Home() {
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-[#1E3A5F] mb-2">ABF/Structured Credit Analytics Portal</h1>
-        <p className="text-gray-600">Interactive tools for analyzing Asset-Based Finance and Structured Credit products</p>
+        <h1 className="text-2xl font-bold text-[#1E3A5F]">ABF/Structured Credit Analytics Portal</h1>
+        <p className="text-sm text-slate-600">Interactive tools for analyzing Asset-Based Finance and Structured Credit products</p>
       </div>
 
-      {/* ABF Market Universe - Hero Visual */}
-      <div className="bg-gradient-to-b from-slate-50 to-white rounded-xl shadow-lg p-8 mb-8 border border-slate-100">
-        <h2 className="text-lg font-semibold text-[#1E3A5F] mb-6 text-center">Asset-Backed Finance Market Universe</h2>
+      {/* Market Hierarchy - Full Width */}
+      <MarketHierarchy />
 
-        {/* Top Level - Root Node */}
-        <div className="flex justify-center mb-2">
-          <div className="bg-[#4A4A4A] text-white rounded-xl px-10 py-5 text-center shadow-lg border-2 border-[#3A3A3A]">
-            <p className="text-sm font-semibold tracking-wide">Asset Backed Finance Market</p>
-            <p className="text-3xl font-bold mt-1">${ABF_MARKET_DATA.total} trillion</p>
-          </div>
-        </div>
-
-        {/* Connector Lines - SVG for cleaner rendering */}
-        <div className="flex justify-center">
-          <svg width="700" height="40" className="overflow-visible">
-            {/* Vertical line from root */}
-            <line x1="350" y1="0" x2="350" y2="15" stroke="#9CA3AF" strokeWidth="2" />
-            {/* Horizontal connector */}
-            <line x1="115" y1="15" x2="585" y2="15" stroke="#9CA3AF" strokeWidth="2" />
-            {/* Three vertical drops */}
-            <line x1="115" y1="15" x2="115" y2="40" stroke="#9CA3AF" strokeWidth="2" />
-            <line x1="350" y1="15" x2="350" y2="40" stroke="#9CA3AF" strokeWidth="2" />
-            <line x1="585" y1="15" x2="585" y2="40" stroke="#9CA3AF" strokeWidth="2" />
-          </svg>
-        </div>
-
-        {/* Second Level - 3 Segments */}
-        <div className="grid grid-cols-3 gap-6 mb-3">
-          {ABF_MARKET_DATA.segments.map((segment, idx) => (
-            <div key={segment.name} className="flex flex-col items-center">
-              <div className={`${segment.bgColor} ${idx === 1 ? 'text-[#4A4A4A]' : 'text-white'} rounded-xl px-4 py-4 text-center w-full shadow-md transition-transform hover:scale-[1.02]`}>
-                <p className="text-xs font-semibold leading-tight tracking-wide">{segment.name}</p>
-                <p className="text-xl font-bold mt-1">${segment.value} trillion</p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Connector dots */}
-        <div className="grid grid-cols-3 gap-6 mb-2">
-          {ABF_MARKET_DATA.segments.map((segment) => (
-            <div key={segment.name} className="flex justify-center">
-              <div className="w-0.5 h-4 bg-slate-300 rounded-full"></div>
-            </div>
-          ))}
-        </div>
-
-        {/* Third Level - Children */}
-        <div className="grid grid-cols-3 gap-6">
-          {ABF_MARKET_DATA.segments.map((segment) => (
-            <div key={segment.name}>
-              {/* Children boxes */}
-              <div className="grid grid-cols-2 gap-2">
-                {segment.children.map((child) => (
-                  <div
-                    key={child.name}
-                    className={`rounded-lg px-3 py-3 text-center transition-all ${
-                      child.highlight
-                        ? "bg-[#1E3A5F] text-white shadow-lg ring-2 ring-[#1E3A5F]/30 ring-offset-2"
-                        : `${segment.childBg} text-slate-700 shadow-sm hover:shadow-md`
-                    }`}
-                  >
-                    <p className="text-xs font-semibold leading-tight">{child.name}</p>
-                    <p className="text-sm font-bold mt-1">{child.value >= 1 ? `$${child.value}T` : `$${(child.value * 1000).toFixed(0)}B`}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Source */}
-        <p className="text-xs text-slate-400 mt-6 text-center font-medium">Source: Industry estimates, KKR, Guggenheim</p>
+      {/* Two charts side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Public vs Private Issuance Comparison */}
+        <PublicVsPrivateChart />
+        {/* ABS Sector Chart */}
+        <ABSSectorChart />
       </div>
 
-      {/* Tradeable ABS Sector Breakdown - Full Width with Toggle */}
-      <ABSSectorChart />
-
-      {/* Portal Modules */}
-      <h2 className="text-xl font-semibold text-[#1E3A5F] mb-4">Portal Modules</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <ModuleCard
-          title="Deal Modeler"
-          description="Compare, stress test & model waterfalls"
-          features={["Side-by-side structure comparison", "Scenario stress testing", "Full waterfall modeling", "ARD trigger support", "MOIC, WAL, CNL tracking"]}
-        />
-        <ModuleCard
-          title="Spread Monitor"
-          description="Track relative value"
-          features={["Private vs public credit yields", "Corporate benchmarks", "ABS/CLO spreads by rating", "Historical trends"]}
-        />
-        <ModuleCard
-          title="Market Tracker"
-          description="Monitor new issuance"
-          features={["Deal database", "Filter by collateral", "Issuance analytics", "Export to CSV"]}
-        />
-      </div>
-
-      {/* Key Concepts */}
-      <h2 className="text-xl font-semibold text-[#1E3A5F] mb-4">Key Concepts</h2>
-      <div className="max-w-3xl mb-8">
-        <Accordion title="OC Test (Overcollateralization)"><p>Formula: Collateral Value / Outstanding Notes. Ensures enough collateral to cover debt. Typical thresholds: 122% for CLO AAA, 105-110% for ABS.</p></Accordion>
-        <Accordion title="IC Test (Interest Coverage)"><p>Formula: Interest Income / Interest Expense. Ensures income covers interest payments. Typical threshold: 120%.</p></Accordion>
-        <Accordion title="CNL Trigger"><p>Cumulative Net Loss trigger. When CNL exceeds threshold (e.g., 8-12%), deal switches to sequential pay to protect seniors.</p></Accordion>
-        <Accordion title="Sequential vs Pro-Rata"><p>Sequential pays seniors first. Pro-rata pays proportionally. Deals switch from pro-rata to sequential when triggers breach.</p></Accordion>
-        <Accordion title="ARD (Anticipated Repayment Date)"><p>Timing-based trigger. If deal extends past ARD, excess cash flow diverts to accelerate senior amortization.</p></Accordion>
+      {/* Bottom row - Three columns: Modules, Infrastructure Visual, Key Concepts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <PortalModules />
+        <InfrastructureVisual />
+        <KeyConcepts />
       </div>
 
       {/* Footer */}
-      <div className="border-t pt-4">
-        <div className="flex justify-between items-center text-sm text-gray-500">
+      <div className="border-t border-slate-200 pt-4">
+        <div className="flex justify-between items-center text-xs text-slate-500">
           <span>ABF Analytics Portal</span>
           <span className="font-medium text-[#1E3A5F]">Bain Capital Credit | For Consideration by Brett Wilzbach</span>
         </div>

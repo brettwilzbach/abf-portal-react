@@ -13,6 +13,8 @@ import {
   TableIcon,
   Clock,
   HelpCircle,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -41,11 +43,18 @@ import { DEAL_TEMPLATES, DEAL_TEMPLATE_KEYS, getRatingColorClass } from '@/lib/d
 import { getBloombergSOFR } from '@/lib/bloomberg';
 import type {
   DealTemplate,
-  CashFlowResult,
-  TrancheSummary,
-  WaterfallOutput,
   ScenarioResult,
 } from '@/types/waterfall';
+import {
+  calculateWaterfall,
+  calculateBreakevenCDR,
+} from '@/lib/waterfall-engine';
+import { SCENARIO_PRESETS } from '@/lib/scenario-presets';
+import {
+  DEFAULT_SERVICING_FEE_BPS,
+  DEFAULT_OTHER_FEES_BPS,
+  getTemplateDefaults,
+} from '@/lib/model-defaults';
 
 // =============================================================================
 // TOOLTIP HELPER
@@ -60,349 +69,20 @@ function Tip({ text }: { text: string }) {
 }
 
 
-function calculateIRR(cashFlows: number[], guess = 0.01): number | null {
-  if (cashFlows.length < 2) return null;
-  const hasPositive = cashFlows.some((cf) => cf > 0);
-  const hasNegative = cashFlows.some((cf) => cf < 0);
-  if (!hasPositive || !hasNegative) return null;
-
-  let rate = guess;
-  for (let i = 0; i < 50; i++) {
-    let npv = 0;
-    let dnpv = 0;
-    for (let t = 0; t < cashFlows.length; t++) {
-      const cf = cashFlows[t];
-      const denom = Math.pow(1 + rate, t);
-      npv += cf / denom;
-      if (t > 0) {
-        dnpv -= (t * cf) / Math.pow(1 + rate, t + 1);
-      }
-    }
-    if (Math.abs(npv) < 1e-7) return rate;
-    if (dnpv == 0) break;
-    rate = rate - npv / dnpv;
-    if (rate <= -0.99) rate = -0.99;
-  }
-  return null;
-}
+// IRR, waterfall, and breakeven utilities live in src/lib/waterfall-engine.ts
 
 // =============================================================================
 // ASSET-CLASS SPECIFIC SCENARIO PRESETS
 // Based on industry benchmarks for each asset type
 // =============================================================================
 
-interface ScenarioPreset {
-  name: string;
-  cpr: number;
-  cdr: number;
-  recovery: number;
-  months: number;
-}
-
-const SCENARIO_PRESETS: Record<string, Record<string, ScenarioPreset>> = {
-  'auto-abs': {
-    base: { name: 'Base', cpr: 18, cdr: 5, recovery: 45, months: 60 },
-    stress: { name: 'Stress', cpr: 6, cdr: 12, recovery: 35, months: 72 },
-    extension: { name: 'Extension', cpr: 3, cdr: 6, recovery: 40, months: 84 },
-  },
-  'consumer': {
-    base: { name: 'Base', cpr: 20, cdr: 7, recovery: 20, months: 48 },
-    stress: { name: 'Stress', cpr: 8, cdr: 15, recovery: 10, months: 60 },
-    extension: { name: 'Extension', cpr: 4, cdr: 9, recovery: 15, months: 72 },
-  },
-  'equipment': {
-    base: { name: 'Base', cpr: 8, cdr: 3, recovery: 60, months: 60 },
-    stress: { name: 'Stress', cpr: 4, cdr: 7, recovery: 45, months: 72 },
-    extension: { name: 'Extension', cpr: 2, cdr: 4, recovery: 50, months: 84 },
-  },
-  'clo': {
-    base: { name: 'Base', cpr: 12, cdr: 3, recovery: 60, months: 120 },
-    stress: { name: 'Stress', cpr: 6, cdr: 8, recovery: 45, months: 120 },
-    extension: { name: 'Extension', cpr: 4, cdr: 4, recovery: 55, months: 120 },
-  },
-};
+// Defaults are defined in src/lib/model-defaults.ts
 
 // =============================================================================
 // BREAKEVEN CDR CALCULATION
 // Binary search to find CDR at which a tranche first takes principal loss
 // =============================================================================
 
-function calculateBreakevenCDR(
-  template: DealTemplate,
-  cpr: number,
-  recovery: number,
-  months: number,
-  trancheIndex: number
-): number | null {
-  let low = 0;
-  let high = 50; // Max CDR to search
-  const tolerance = 0.1;
-
-  // Check if already losing at CDR=0
-  const atZero = calculateWaterfall(template, cpr, 0, recovery, months);
-  if (atZero.trancheSummary[trancheIndex]?.principalLoss > 0.01) {
-    return 0;
-  }
-
-  // Check if still safe at max CDR
-  const atMax = calculateWaterfall(template, cpr, high, recovery, months);
-  if (atMax.trancheSummary[trancheIndex]?.principalLoss <= 0.01) {
-    return null; // Breakeven above 50% CDR (effectively infinite protection)
-  }
-
-  // Binary search
-  for (let i = 0; i < 20; i++) {
-    const mid = (low + high) / 2;
-    const result = calculateWaterfall(template, cpr, mid, recovery, months);
-    const hasLoss = result.trancheSummary[trancheIndex]?.principalLoss > 0.01;
-
-    if (hasLoss) {
-      high = mid;
-    } else {
-      low = mid;
-    }
-
-    if (high - low < tolerance) break;
-  }
-
-  return (low + high) / 2;
-}
-
-// =============================================================================
-// WATERFALL CALCULATION ENGINE (with ARD trigger)
-// =============================================================================
-
-function calculateWaterfall(
-  template: DealTemplate,
-  cpr: number,
-  cdr: number,
-  recovery: number,
-  months: number,
-  sofrRate: number = 3.69 // SOFR base rate assumption
-): WaterfallOutput {
-  const cashFlows: CashFlowResult[] = [];
-  let collateralBalance = template.collateralBalance;
-  let cumulativeLoss = 0;
-  const monthlyPaymentRate = 1 / template.wam;
-
-  // Find ARD trigger - only type='ARD' causes turbo; type='INFO' is informational only (e.g., CLO non-call)
-  const ardTrigger = template.triggers.find((t) => t.type === 'ARD');
-  const ardMonth = ardTrigger ? ardTrigger.threshold : Infinity;
-  let ardTriggered = false;
-  let ardActivationMonth: number | null = null;
-
-  // Track tranche balances and principal receipts
-  const trancheBalances = template.tranches.map((t) => t.balance);
-  const tranchePrincipalReceived = template.tranches.map(() => 0);
-  const trancheInterestReceived = template.tranches.map(() => 0);
-  const trancheInterestShortfall = template.tranches.map(() => 0); // Cumulative unpaid interest
-  const trancheCashFlows = template.tranches.map(() => [] as number[]);
-
-  // Track if we're in sequential mode (triggered by OC/CNL breach)
-  let isSequentialMode = false;
-
-  for (let period = 1; period <= months && collateralBalance > 0.1; period++) {
-    const startBalance = collateralBalance;
-    const scheduledPrincipal = startBalance * monthlyPaymentRate;
-    const prepayments = startBalance * (cpr / 100 / 12);
-    const defaults = startBalance * (cdr / 100 / 12);
-    const recoveries = defaults * (recovery / 100);
-    const losses = defaults - recoveries;
-    const interestIncome = startBalance * (template.wac / 100 / 12);
-
-    // Interest Waterfall: Pay tranches in priority order, capped by available interest
-    // Available interest = interest income from collateral
-    let availableInterest = interestIncome;
-    let totalInterestPaid = 0;
-    const periodInterestPaid = template.tranches.map(() => 0);
-    const periodPrincipalPaid = template.tranches.map(() => 0);
-
-    // Pay interest to tranches in priority order (senior first)
-    for (let i = 0; i < template.tranches.length; i++) {
-      const t = template.tranches[i];
-      if (trancheBalances[i] > 0 && t.spread > 0) {
-        // Coupon = SOFR + spread on outstanding balance
-        const couponDue = trancheBalances[i] * ((sofrRate + t.spread / 100) / 100 / 12);
-        const couponPaid = Math.min(couponDue, availableInterest);
-        const shortfall = couponDue - couponPaid;
-        trancheInterestReceived[i] += couponPaid;
-        periodInterestPaid[i] += couponPaid;
-        trancheInterestShortfall[i] += shortfall; // Track cumulative shortfall
-        availableInterest -= couponPaid;
-        totalInterestPaid += couponPaid;
-      }
-    }
-    const excessSpread = Math.max(0, availableInterest); // Remaining after all interest paid
-
-    cumulativeLoss += losses;
-    collateralBalance = startBalance - scheduledPrincipal - prepayments - defaults;
-
-    const cnlPercent = (cumulativeLoss / template.collateralBalance) * 100;
-    // OC calculation excludes equity/residual (NR rated) per industry standard
-    const ratedNoteBalances = template.tranches
-      .map((t, idx) => (t.rating !== 'NR' ? trancheBalances[idx] : 0))
-      .reduce((sum, b) => sum + b, 0);
-    const ocPercent = ratedNoteBalances > 0 ? (collateralBalance / ratedNoteBalances) * 100 : 100;
-
-    // Check triggers for sequential mode switch
-    const ocTrigger = template.triggers.find((t) => t.type === 'OC');
-    const cnlTrigger = template.triggers.find((t) => t.type === 'CNL');
-    const ocBreached = ocTrigger && ocPercent < ocTrigger.threshold;
-    const cnlBreached = cnlTrigger && cnlPercent > cnlTrigger.threshold;
-
-    // Once triggered, stay in sequential mode (cash trapped)
-    if (ocBreached || cnlBreached) {
-      isSequentialMode = true;
-    }
-
-    const triggerStatus = (ocBreached || cnlBreached) ? 'Fail' : 'Pass';
-
-    // Check ARD trigger: if post-ARD and deal balance > 0
-    const isPostARD = period > ardMonth && collateralBalance > 0.1;
-    if (isPostARD && !ardTriggered) {
-      ardTriggered = true;
-      ardActivationMonth = period;
-    }
-
-    // Distribute principal to tranches
-    let availablePrincipal = scheduledPrincipal + prepayments + recoveries;
-    let turboPayment = 0;
-    let excessSpreadToEquity = 0;
-
-    // Principal distribution: Pro-rata when triggers pass, Sequential when breached/post-ARD
-    const useSequential = isSequentialMode || isPostARD;
-
-    // If post-ARD or in sequential mode, excess spread turbos to senior paydown
-    // Otherwise, excess spread flows to equity as cash distribution
-    if (useSequential) {
-      turboPayment = excessSpread;
-      availablePrincipal += excessSpread;
-    } else {
-      // Excess spread goes to equity in pro-rata mode (cash distribution, not principal paydown)
-      excessSpreadToEquity = excessSpread;
-    }
-
-    // Get rated tranches (exclude NR/equity for pro-rata calculation)
-    const ratedTranchesInfo = template.tranches
-      .map((t, idx) => ({ idx, balance: trancheBalances[idx], rating: t.rating }))
-      .filter(t => t.rating !== 'NR' && t.balance > 0);
-
-    if (useSequential) {
-      // Sequential pay: pay senior tranches first (most senior = lowest index)
-      for (let i = 0; i < trancheBalances.length && availablePrincipal > 0; i++) {
-        if (trancheBalances[i] > 0 && template.tranches[i].rating !== 'NR') {
-          const paydown = Math.min(availablePrincipal, trancheBalances[i]);
-          trancheBalances[i] -= paydown;
-          tranchePrincipalReceived[i] += paydown;
-          periodPrincipalPaid[i] += paydown;
-          availablePrincipal -= paydown;
-        }
-      }
-    } else {
-      // Pro-rata: distribute proportionally to all rated tranches based on outstanding balance
-      const totalRatedBalance = ratedTranchesInfo.reduce((sum, t) => sum + t.balance, 0);
-      if (totalRatedBalance > 0) {
-        const principalToDistribute = Math.min(availablePrincipal, totalRatedBalance);
-        for (const t of ratedTranchesInfo) {
-          const share = t.balance / totalRatedBalance;
-          const paydown = Math.min(principalToDistribute * share, trancheBalances[t.idx]);
-          trancheBalances[t.idx] -= paydown;
-          tranchePrincipalReceived[t.idx] += paydown;
-          periodPrincipalPaid[t.idx] += paydown;
-          availablePrincipal -= paydown;
-        }
-      }
-    }
-
-    // Any remaining principal goes to equity/residual (NR rated)
-    for (let i = 0; i < trancheBalances.length && availablePrincipal > 0; i++) {
-      if (trancheBalances[i] > 0 && template.tranches[i].rating === 'NR') {
-        const paydown = Math.min(availablePrincipal, trancheBalances[i]);
-        trancheBalances[i] -= paydown;
-        tranchePrincipalReceived[i] += paydown;
-        availablePrincipal -= paydown;
-      }
-    }
-
-    // Excess spread to equity (cash distribution in pro-rata mode)
-    // This is income to equity, tracked separately from principal
-    const equityIdx = template.tranches.findIndex(t => t.rating === 'NR');
-    if (equityIdx >= 0 && excessSpreadToEquity > 0) {
-      trancheInterestReceived[equityIdx] += excessSpreadToEquity;
-      periodInterestPaid[equityIdx] += excessSpreadToEquity;
-    }
-
-    for (let i = 0; i < trancheCashFlows.length; i++) {
-      trancheCashFlows[i].push(periodInterestPaid[i] + periodPrincipalPaid[i]);
-    }
-
-    cashFlows.push({
-      period,
-      collateralStart: startBalance,
-      collateralEnd: Math.max(0, collateralBalance),
-      scheduledPrincipal,
-      prepayments,
-      defaults,
-      recoveries,
-      losses,
-      interestIncome,
-      excessSpread,
-      cnlPercent,
-      ocPercent,
-      triggerStatus,
-      ardActive: isPostARD,
-      turboPayment: (isPostARD || isSequentialMode) ? turboPayment : 0,
-    });
-  }
-
-  // Calculate tranche summaries using actual modeled cash flows
-  const trancheSummary: TrancheSummary[] = template.tranches.map((tranche, idx) => {
-    const finalBalance = trancheBalances[idx];
-    const principalReceived = tranchePrincipalReceived[idx];
-    const interestReceived = trancheInterestReceived[idx];
-    const interestShortfall = trancheInterestShortfall[idx];
-    const principalLoss = Math.max(0, tranche.balance - principalReceived - finalBalance);
-
-    // Simplified WAL: use average of periods weighted by principal (approximation)
-    // In a full model, we'd track period-by-period principal for each tranche
-    const avgPeriod = cashFlows.length > 0 ? (cashFlows.length / 2) : 1;
-    const wal = principalReceived > 0 ? (avgPeriod / 12) : 0;
-
-    const totalCashReceived = principalReceived + interestReceived;
-    const moic = tranche.balance > 0 ? totalCashReceived / tranche.balance : 0;
-
-    const cashFlowSeries = tranche.balance > 0
-      ? [-tranche.balance, ...trancheCashFlows[idx]]
-      : [];
-    const monthlyIrr = cashFlowSeries.length > 0 ? calculateIRR(cashFlowSeries) : null;
-    const irr = monthlyIrr == null ? null : Math.pow(1 + monthlyIrr, 12) - 1;
-
-    return {
-      name: tranche.name,
-      rating: tranche.rating,
-      originalBalance: tranche.balance,
-      finalBalance: Math.max(0, finalBalance),
-      totalInterest: interestReceived,
-      totalPrincipal: principalReceived,
-      principalLoss,
-      interestShortfall,
-      moic: Math.max(0, moic),
-      irr: irr == null ? null : Math.max(-0.99, irr),
-      wal: Math.max(0.1, wal),
-    };
-  });
-
-  const lastCf = cashFlows[cashFlows.length - 1];
-  return {
-    cashFlows,
-    trancheSummary,
-    triggerBreaches: cashFlows.filter((cf) => cf.triggerStatus === 'Fail').length,
-    finalCNL: lastCf?.cnlPercent || 0,
-    finalOC: lastCf?.ocPercent || 0,
-    ardTriggered,
-    ardMonth: ardActivationMonth,
-  };
-}
 
 // =============================================================================
 // SCENARIO ANALYSIS (quick stress test)
@@ -463,17 +143,42 @@ function calculateScenarioResults(
 
 export default function DealModelerPage() {
   // State
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('auto-abs');
-  const [cpr, setCpr] = useState(15);
-  const [cdr, setCdr] = useState(5);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('equipment');
+  // Default to Equipment ABS base case (clean deal, no trigger breaches, positive IRRs)
+  // These must match SCENARIO_PRESETS['equipment'].base
+  const [cpr, setCpr] = useState(18);
+  const [cdr, setCdr] = useState(2); // Start at realistic 2% CDR
   // Severity drives losses: Recovery = 100 - Severity
   // Using severity as the primary input (more intuitive for stress testing)
-  const [severity, setSeverity] = useState(55);
+  const [severity, setSeverity] = useState(15); // 85% recovery for equipment
   const recovery = 100 - severity; // Derived from severity
-  const [months, setMonths] = useState(60);
+  const [months, setMonths] = useState(60); // Must be long enough to fully amortize the deal
   const [sofr, setSofr] = useState<number | null>(null); // SOFR from Bloomberg (SOFRRATE INDEX)
+  // Excess spread adjustment (bps) - the difference between collateral yield (WAC) and liability costs (tranche coupons)
+  // Positive = more cushion for losses/equity distributions. Negative = tighter, stressed economics.
+  const [excessSpreadBps, setExcessSpreadBps] = useState(0);
+  const [servicingFeeBps, setServicingFeeBps] = useState(DEFAULT_SERVICING_FEE_BPS);
+  const [otherFeesBps, setOtherFeesBps] = useState(DEFAULT_OTHER_FEES_BPS);
+  const initialTemplateDefaults = getTemplateDefaults(selectedTemplate);
+  const getDefaultTranchePrices = (templateId: string) => {
+    const defaults = getTemplateDefaults(templateId);
+    const template = DEAL_TEMPLATES[templateId];
+    const fallback = template?.tranches.map(() => 100) ?? [];
+    if (!defaults.tranchePricesPct || defaults.tranchePricesPct.length !== fallback.length) {
+      return fallback;
+    }
+    return defaults.tranchePricesPct;
+  };
+  const [tranchePricesPct, setTranchePricesPct] = useState<number[]>(
+    getDefaultTranchePrices(selectedTemplate)
+  );
+  const equitySharePct = initialTemplateDefaults.equitySharePct;
   const [hasRun, setHasRun] = useState(false);
   const [compareStructures, setCompareStructures] = useState<string[]>(['auto-abs', 'clo']);
+  // Tab navigation - controlled for programmatic switching
+  const [activeTab, setActiveTab] = useState('scenario-inputs');
+  // Advanced settings toggle - collapsed by default for cleaner UI
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
   // Fetch live SOFR from Bloomberg on mount (SOFRRATE INDEX)
   const fetchSOFR = useCallback(async () => {
@@ -503,53 +208,117 @@ export default function DealModelerPage() {
     wam: customWam ?? baseTemplate.wam,
   }), [baseTemplate, customWac, customCollateral, customWam]);
 
-  // Reset custom values when template changes
+  // Reset to base case when template changes (keeps all tabs in sync)
   const handleTemplateChange = (newTemplate: string) => {
     setSelectedTemplate(newTemplate);
     setCustomWac(null);
     setCustomCollateral(null);
     setCustomWam(null);
     setHasRun(false);
+    // Apply the new template's base case preset to keep scenario assumptions synced
+    const preset = SCENARIO_PRESETS[newTemplate]?.base || SCENARIO_PRESETS['equipment'].base;
+    setCpr(preset.cpr);
+    setCdr(preset.cdr);
+    setSeverity(100 - preset.recovery);
+    setMonths(preset.months);
+    setExcessSpreadBps(0);
+    setServicingFeeBps(DEFAULT_SERVICING_FEE_BPS);
+    setOtherFeesBps(DEFAULT_OTHER_FEES_BPS);
+    setTranchePricesPct(getDefaultTranchePrices(newTemplate));
   };
 
   // Full waterfall calculation - always run to get accurate IRR for both tabs
   // Severity drives loss calculation: effectiveRecovery = 100 - severity
-  // This ensures all sliders (CPR, CDR, Severity, Months, SOFR) affect IRR
+  // This ensures all sliders (CPR, CDR, Severity, Months, SOFR, Extra Spread) affect IRR
   const waterfallResults = useMemo(() => {
     const effectiveRecovery = 100 - severity;
-    return calculateWaterfall(template, cpr, cdr, effectiveRecovery, months, effectiveSofr);
-  }, [template, cpr, cdr, severity, months, effectiveSofr]);
+    return calculateWaterfall(
+      template,
+      cpr,
+      cdr,
+      effectiveRecovery,
+      months,
+      effectiveSofr,
+      excessSpreadBps,
+      servicingFeeBps,
+      otherFeesBps,
+      equitySharePct,
+      tranchePricesPct
+    );
+  }, [template, cpr, cdr, severity, months, effectiveSofr, excessSpreadBps, servicingFeeBps, otherFeesBps, tranchePricesPct]);
 
   // Breakeven CDR for equity (last tranche) - CDR at which equity first takes loss
   const equityBreakevenCDR = useMemo(() => {
     const effectiveRecovery = 100 - severity;
     const equityIdx = template.tranches.length - 1; // Equity is last
-    return calculateBreakevenCDR(template, cpr, effectiveRecovery, months, equityIdx);
-  }, [template, cpr, severity, months]);
+    return calculateBreakevenCDR(
+      template,
+      cpr,
+      effectiveRecovery,
+      months,
+      equityIdx,
+      servicingFeeBps,
+      otherFeesBps,
+      equitySharePct,
+      tranchePricesPct
+    );
+  }, [template, cpr, severity, months, servicingFeeBps, otherFeesBps, tranchePricesPct]);
 
-  // Quick scenario results (for scenario tab) - now enriched with IRR from waterfall
+  // Scenario results - now fully driven by waterfall model for accuracy
   const scenarioResults = useMemo(() => {
-    const baseResults = calculateScenarioResults(cpr, cdr, severity, template, effectiveSofr);
-    // Merge IRR from waterfall results
-    return baseResults.map((result, idx) => {
+    return template.tranches.map((tranche, idx) => {
       const waterfallTranche = waterfallResults?.trancheSummary[idx];
+
+      // Calculate principal loss percent from waterfall model
+      const principalLossPercent = waterfallTranche && waterfallTranche.originalBalance > 0
+        ? (waterfallTranche.principalLoss / waterfallTranche.originalBalance) * 100
+        : 0;
+
+      // Determine status based on modeled cash flows
+      let status: 'safe' | 'impaired' | 'loss' = 'safe';
+      if (principalLossPercent > 50) {
+        status = 'loss';
+      } else if (principalLossPercent > 0 || (waterfallTranche?.interestShortfall ?? 0) > 0) {
+        status = 'impaired';
+      }
+
+      // Debt tranches: Yield = SOFR + spread (contractual)
+      // Equity (NR): No contractual yield
+      const isEquity = tranche.rating === 'NR';
+      const yieldVal = isEquity ? null : (effectiveSofr + tranche.spread / 100);
+
       return {
-        ...result,
+        tranche: tranche.name,
+        rating: tranche.rating,
+        subordination: tranche.subordination,
+        moic: waterfallTranche?.moic ?? 0,
+        wal: waterfallTranche?.wal ?? 0,
+        yield: yieldVal,
         irr: waterfallTranche?.irr ?? null,
+        principalLoss: principalLossPercent,
+        status,
       };
     });
-  }, [cpr, cdr, severity, template, effectiveSofr, waterfallResults]);
+  }, [template, effectiveSofr, waterfallResults]);
 
   const totalLoss = (cdr / 100) * (severity / 100) * 100;
-  const ocRatio = 100 / (100 - totalLoss) * 100;
-  const ocBreached = ocRatio < 105;
+  const breachMonths = waterfallResults?.cashFlows.filter((cf) => cf.triggerStatus === 'Fail').length ?? 0;
+  const firstBreachMonth = waterfallResults?.cashFlows.find((cf) => cf.triggerStatus === 'Fail')?.period ?? null;
+  const allPositiveIrr = waterfallResults?.trancheSummary.every((ts) => ts.irr !== null && ts.irr >= 0) ?? false;
 
   const handleRun = () => setHasRun(true);
   const handleReset = () => {
     setHasRun(false);
-    setCpr(15);
-    setCdr(5);
-    setSeverity(55); // Recovery = 45%
+    // Reset to base case for current template
+    const preset = SCENARIO_PRESETS[selectedTemplate]?.base || SCENARIO_PRESETS['auto-abs'].base;
+    setCpr(preset.cpr);
+    setCdr(preset.cdr);
+    setSeverity(100 - preset.recovery);
+    setMonths(preset.months);
+    setExcessSpreadBps(0);
+    setServicingFeeBps(DEFAULT_SERVICING_FEE_BPS);
+    setOtherFeesBps(DEFAULT_OTHER_FEES_BPS);
+    setTranchePricesPct(getDefaultTranchePrices(selectedTemplate));
   };
 
   const getStatusColor = (status: string) => {
@@ -609,8 +378,8 @@ export default function DealModelerPage() {
           <div>
             <h3 className="text-sm font-semibold text-slate-700 mb-1">Simplified Model Assumptions</h3>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Constant CPR/CDR vectors (no seasoning curves), instant recovery (no lag), no servicing/trustee fees,
-              no reinvestment. Pro-rata principal when triggers pass; sequential post-breach or post-ARD. Interest
+              Constant CPR/CDR vectors (no seasoning curves), instant recovery (no lag), servicing fee applied via inputs,
+              bond pricing applied to IRR, no reinvestment. Pro-rata principal when triggers pass; sequential post-breach or post-ARD. Interest
               paid senior-first, capped by available collections (shortfalls tracked). Excess spread to equity when
               performing, turbos to seniors when sequential. OC = Collateral / Rated Notes. For relative value only.
             </p>
@@ -618,23 +387,28 @@ export default function DealModelerPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="compare" className="space-y-6">
-        <TabsList className="grid grid-cols-4 w-full max-w-2xl">
-          <TabsTrigger value="compare" className="gap-2">
-            <BarChart3 className="h-4 w-4" />
-            Compare
-          </TabsTrigger>
-          <TabsTrigger value="scenario" className="gap-2">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="grid grid-cols-4 w-full max-w-3xl">
+          <TabsTrigger value="scenario-inputs" className="gap-2 text-xs sm:text-sm">
             <AlertTriangle className="h-4 w-4" />
-            Scenario
+            <span className="hidden sm:inline">Scenario Inputs</span>
+            <span className="sm:hidden">Inputs</span>
+            <span className="text-[10px] text-green-600 font-medium hidden lg:inline">(Start Here)</span>
           </TabsTrigger>
-          <TabsTrigger value="waterfall" className="gap-2">
+          <TabsTrigger value="tranche-analysis" className="gap-2 text-xs sm:text-sm">
             <Calculator className="h-4 w-4" />
-            Waterfall
+            <span className="hidden sm:inline">Tranche Analysis</span>
+            <span className="sm:hidden">Returns</span>
           </TabsTrigger>
-          <TabsTrigger value="cashflows" className="gap-2" disabled={!hasRun}>
+          <TabsTrigger value="cashflows" className="gap-2 text-xs sm:text-sm">
             <TableIcon className="h-4 w-4" />
-            Cash Flows
+            <span className="hidden sm:inline">Cash Flow Visualization</span>
+            <span className="sm:hidden">Cash Flows</span>
+          </TabsTrigger>
+          <TabsTrigger value="compare" className="gap-2 text-xs sm:text-sm">
+            <BarChart3 className="h-4 w-4" />
+            <span className="hidden sm:inline">Compare Structures</span>
+            <span className="sm:hidden">Compare</span>
           </TabsTrigger>
         </TabsList>
 
@@ -829,7 +603,7 @@ export default function DealModelerPage() {
                         const trigger = ard || info;
                         return (
                           <td key={key} className="text-center py-2 font-medium">
-                            {trigger ? `M${trigger.threshold}${info ? '*' : ''}` : '—'}
+                            {trigger ? `M${trigger.threshold}${info ? '*' : ''}` : '--'}
                           </td>
                         );
                       })}
@@ -856,9 +630,9 @@ export default function DealModelerPage() {
         </TabsContent>
 
         {/* ================================================================ */}
-        {/* SCENARIO TAB */}
+        {/* SCENARIO ANALYSIS (Inputs) TAB */}
         {/* ================================================================ */}
-        <TabsContent value="scenario" className="space-y-6">
+        <TabsContent value="scenario-inputs" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Scenario Inputs */}
             <Card className="lg:col-span-1">
@@ -867,9 +641,82 @@ export default function DealModelerPage() {
                 <CardDescription>Adjust to stress test the deal</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Excess Spread breakdown */}
+                {(() => {
+                  // Calculate weighted average coupon (SOFR + spread) for rated tranches
+                  const ratedTranches = template.tranches.filter(t => t.rating !== 'NR');
+                  const totalRatedBalance = ratedTranches.reduce((sum, t) => sum + t.balance, 0);
+                  const weightedCoupon = totalRatedBalance > 0
+                    ? ratedTranches.reduce((sum, t) => sum + (effectiveSofr + t.spread / 100) * (t.balance / totalRatedBalance), 0)
+                    : 0;
+                  const servicingFeePct = servicingFeeBps / 100;
+                  const otherFeesPct = otherFeesBps / 100;
+                  const baseExcessSpread = template.wac - weightedCoupon - servicingFeePct - otherFeesPct;
+                  const effectiveExcessSpread = baseExcessSpread + excessSpreadBps / 100;
+                  return (
+                    <div className="p-3 bg-[#1C2156]/5 rounded-lg border border-[#1C2156]/10 space-y-2">
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Deal Economics</p>
+
+                      {/* Asset Yield */}
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Asset Yield (WAC)</span>
+                        <span className="font-mono font-medium text-[#1E3A5F]">{template.wac.toFixed(2)}%</span>
+                      </div>
+
+                      {/* Liability Cost */}
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Liability Cost (Wtd Avg Cpn)</span>
+                        <span className="font-mono font-medium text-[#1E3A5F]">{weightedCoupon.toFixed(2)}%</span>
+                      </div>
+
+                      {/* Servicing Fee */}
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Servicing Fee</span>
+                        <span className="font-mono font-medium text-[#1E3A5F]">{servicingFeePct.toFixed(2)}%</span>
+                      </div>
+
+                      {/* Other Fees hidden from UI but applied in model */}
+
+                      {/* Pricing */}
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Avg Price</span>
+                        <span className="font-mono font-medium text-[#1E3A5F]">
+                          {(() => {
+                            const total = template.tranches.reduce((sum, t) => sum + t.balance, 0);
+                            const weighted = template.tranches.reduce(
+                              (sum, t, idx) => sum + t.balance * (tranchePricesPct[idx] ?? 100),
+                              0
+                            );
+                            const avg = total > 0 ? weighted / total : 100;
+                            return `${avg.toFixed(1)}%`;
+                          })()}
+                        </span>
+                      </div>
+
+                      {/* Excess Spread */}
+                      <div className="flex justify-between items-center text-sm pt-2 border-t border-[#1C2156]/20">
+                        <span className="text-gray-700 font-medium">Excess Spread (net)</span>
+                        <span className="font-mono font-semibold text-[#1E3A5F]">{(baseExcessSpread * 100).toFixed(0)} bps</span>
+                      </div>
+
+                      {/* Effective if adjusted */}
+                      {excessSpreadBps !== 0 && (
+                        <div className="flex justify-between items-center text-sm pt-2 border-t border-[#1C2156]/20">
+                          <span className="text-gray-600">
+                            Adjusted ({excessSpreadBps >= 0 ? '+' : ''}{excessSpreadBps} bps)
+                          </span>
+                          <span className={`font-mono font-semibold ${effectiveExcessSpread >= 0 ? 'text-[#1E3A5F]' : 'text-red-600'}`}>
+                            {(effectiveExcessSpread * 100).toFixed(0)} bps
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="space-y-2">
                   <Label>Deal Type</Label>
-                  <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
+                  <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -934,34 +781,117 @@ export default function DealModelerPage() {
                   />
                 </div>
 
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <Label className="flex items-center">
+                      Excess Spread Adj.
+                      <Tip text="Excess spread = WAC minus weighted-average tranche coupon minus fees. Adjust to model richer (positive) or tighter (negative) deal economics. Flows to equity as cash distributions." />
+                    </Label>
+                    <span className="text-sm font-mono text-[#1E3A5F]">
+                      {excessSpreadBps >= 0 ? '+' : ''}{excessSpreadBps} bps
+                    </span>
+                  </div>
+                  <Input
+                    type="range"
+                    min="-300"
+                    max="300"
+                    step="25"
+                    value={excessSpreadBps}
+                    onChange={(e) => setExcessSpreadBps(Number(e.target.value))}
+                  />
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>Tight</span>
+                    <span>Base</span>
+                    <span>Rich</span>
+                  </div>
+                </div>
+
+                {/* Advanced Settings Toggle */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    {showAdvancedSettings ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                    <span>Advanced Settings</span>
+                    {!showAdvancedSettings && (
+                      <span className="text-xs text-gray-400">(Fees, Pricing)</span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Advanced Settings - Collapsible */}
+                {showAdvancedSettings && (
+                  <div className="space-y-4 pt-2 pl-2 border-l-2 border-gray-200">
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <Label className="flex items-center text-sm">
+                          Servicing Fee
+                          <Tip text="Annual servicing/trustee fee applied to collateral balance. Reduces net excess spread." />
+                        </Label>
+                        <span className="text-sm font-mono text-[#1E3A5F]">{servicingFeeBps} bps</span>
+                      </div>
+                      <Input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={servicingFeeBps}
+                        onChange={(e) => setServicingFeeBps(Number(e.target.value))}
+                      />
+                    </div>
+
+                  </div>
+                )}
+
                 <div className="pt-4 border-t space-y-2">
                   <Label className="text-xs text-gray-500">
-                    Asset-Class Presets ({DEAL_TEMPLATES[selectedTemplate].name})
+                    Scenario Presets
                   </Label>
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(SCENARIO_PRESETS[selectedTemplate] || SCENARIO_PRESETS['auto-abs']).map(
                       ([key, preset]) => (
                         <Button
                           key={key}
-                          variant="outline"
+                          variant={key === 'base' ? 'default' : 'outline'}
                           size="sm"
                           onClick={() => {
                             setCpr(preset.cpr);
                             setCdr(preset.cdr);
                             setSeverity(100 - preset.recovery); // Severity drives recovery
                             setMonths(preset.months);
+                            setExcessSpreadBps(0); // Reset excess spread adjustment
+                            setServicingFeeBps(DEFAULT_SERVICING_FEE_BPS);
+                            setOtherFeesBps(DEFAULT_OTHER_FEES_BPS);
+                            setTranchePricesPct(getDefaultTranchePrices(selectedTemplate));
                           }}
-                          className={key === 'stress' ? 'border-amber-400 hover:bg-amber-50' : key === 'extension' ? 'border-orange-400 hover:bg-orange-50' : ''}
+                          className={
+                            key === 'base'
+                              ? 'bg-[#1C2156] hover:bg-[#1E3278] text-white'
+                              : key === 'stress'
+                              ? 'border-amber-500 text-amber-700 hover:bg-amber-50'
+                              : key === 'extension'
+                              ? 'border-orange-500 text-orange-700 hover:bg-orange-50'
+                              : ''
+                          }
                         >
-                          {preset.name}
+                          {key === 'base' ? '* Base Case' : preset.name}
                         </Button>
                       )
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">
-                    CPR: {SCENARIO_PRESETS[selectedTemplate]?.base.cpr || 18}% base |
-                    CDR: {SCENARIO_PRESETS[selectedTemplate]?.base.cdr || 5}% base |
-                    Recovery: {SCENARIO_PRESETS[selectedTemplate]?.base.recovery || 45}% base
+                  <div className="mt-2 text-xs">
+                    <span className={breachMonths === 0 && allPositiveIrr ? 'text-green-700' : 'text-amber-700'}>
+                      Base case check: {breachMonths === 0 && allPositiveIrr ? 'Clean (no breaches, non-negative IRR)' : 'Review (breach or negative IRR)'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2 p-2 bg-gray-50 rounded">
+                    <strong>Base Case:</strong> Clean deal, no trigger breaches. CPR {SCENARIO_PRESETS[selectedTemplate]?.base.cpr}% | CDR {SCENARIO_PRESETS[selectedTemplate]?.base.cdr}% | Recovery {SCENARIO_PRESETS[selectedTemplate]?.base.recovery}%
                   </p>
                 </div>
               </CardContent>
@@ -970,23 +900,34 @@ export default function DealModelerPage() {
             {/* Results */}
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle className="text-base">Loss Penetration & Tranche Protection</CardTitle>
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span>Modeled Tranche Performance</span>
+                  {breachMonths > 0 && (
+                    <Badge variant="outline" className="text-amber-600 border-amber-400">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      {breachMonths} Breach Month{breachMonths > 1 ? 's' : ''}{firstBreachMonth ? ` (M${firstBreachMonth})` : ''}
+                    </Badge>
+                  )}
+                </CardTitle>
                 <CardDescription>
-                  Cumulative Net Loss: {totalLoss.toFixed(1)}% | OC Ratio: {ocRatio.toFixed(1)}%
-                  {ocBreached && (
-                    <span className="text-red-600 ml-2 flex items-center gap-1 inline-flex">
-                      <AlertTriangle className="h-3 w-3" /> OC Trigger Breached
-                    </span>
+                  Results from {months}-month waterfall model
+                  {waterfallResults?.ardTriggered && (
+                    <span className="text-amber-600 ml-2">| ARD triggered month {waterfallResults.ardMonth}</span>
                   )}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {/* Loss Penetration Visualization */}
+                {/* CNL Penetration Visualization (simplified view) */}
                 <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm font-medium text-gray-700 mb-3">Capital Stack - Loss Penetration</p>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-medium text-gray-700">CNL Penetration (Simplified)</p>
+                    <span className="text-xs text-gray-500">
+                      CNL: {totalLoss.toFixed(1)}% | Final CNL: {waterfallResults?.finalCNL.toFixed(1) ?? '--'}%
+                    </span>
+                  </div>
                   <div className="relative">
-                    {/* Stack visualization */}
-                    <div className="space-y-1">
+                    {/* Stack visualization - heights scaled by balance */}
+                    <div className="space-y-0.5">
                       {template.tranches.map((tranche, idx) => {
                         const totalSize = template.tranches.reduce((sum, t) => sum + t.balance, 0);
                         const tranchePercent = (tranche.balance / totalSize) * 100;
@@ -996,11 +937,17 @@ export default function DealModelerPage() {
                           tranchePercent
                         ));
                         const lossPercent = (lossInTranche / tranchePercent) * 100;
+                        // Scale height by balance: min 20px, max 48px, proportional to % of stack
+                        const barHeight = Math.max(20, Math.min(48, tranchePercent * 1.2));
 
                         return (
-                          <div key={tranche.name} className="flex items-center gap-2">
-                            <span className="text-xs w-16 text-gray-600">{tranche.name}</span>
-                            <div className="flex-1 relative h-6 rounded overflow-hidden bg-gray-200">
+                          <div key={tranche.name} className="flex items-center gap-2 group">
+                            <span className="text-xs w-20 text-gray-600 font-medium">{tranche.name}</span>
+                            <div
+                              className="flex-1 relative rounded overflow-hidden bg-gray-100 border border-gray-200 cursor-default"
+                              style={{ height: `${barHeight}px` }}
+                              title={`${tranche.name}: $${tranche.balance}M (${tranchePercent.toFixed(1)}%) | ${tranche.rating} | Sub: ${tranche.subordination.toFixed(1)}%`}
+                            >
                               {/* Tranche fill */}
                               <div
                                 className={`absolute inset-y-0 left-0 ${getRatingColorClass(tranche.rating)}`}
@@ -1009,17 +956,17 @@ export default function DealModelerPage() {
                               {/* Loss portion */}
                               {lossPercent > 0 && (
                                 <div
-                                  className="absolute inset-y-0 right-0 bg-red-500"
+                                  className="absolute inset-y-0 right-0 bg-red-700"
                                   style={{ width: `${lossPercent}%` }}
                                 />
                               )}
                               {/* Label */}
                               <div className="absolute inset-0 flex items-center justify-between px-2">
-                                <span className="text-xs font-medium text-white drop-shadow">
-                                  {tranche.rating} ({tranchePercent.toFixed(0)}%)
+                                <span className="text-xs font-medium text-white drop-shadow-sm">
+                                  {tranche.rating} . {tranchePercent.toFixed(0)}%
                                 </span>
                                 {isImpaired && (
-                                  <span className="text-xs text-white font-bold">
+                                  <span className="text-xs text-white font-semibold drop-shadow-sm">
                                     {lossPercent.toFixed(0)}% loss
                                   </span>
                                 )}
@@ -1042,7 +989,7 @@ export default function DealModelerPage() {
                 </div>
 
                 <div className="space-y-4">
-                  {scenarioResults.map((result) => {
+                  {scenarioResults.map((result, idx) => {
                     const tranche = template.tranches.find((t) => t.name === result.tranche)!;
                     return (
                       <div key={result.tranche} className="border rounded-lg p-4">
@@ -1090,6 +1037,23 @@ export default function DealModelerPage() {
                             <p className="font-bold text-lg text-[#1E3A5F]">
                               {result.irr == null ? '--' : `${(result.irr * 100).toFixed(1)}%`}
                             </p>
+                            <div className="mt-1 flex items-center justify-center gap-2">
+                              <span className="text-[10px] text-gray-500">Price</span>
+                              <Input
+                                type="number"
+                                min="50"
+                                max="120"
+                                step="1"
+                                value={tranchePricesPct[idx] ?? 100}
+                                onChange={(e) => {
+                                  const next = Number(e.target.value);
+                                  setTranchePricesPct((prev) => prev.map((p, i) => (i === idx ? next : p)));
+                                }}
+                                className="h-6 w-16 text-right text-xs"
+                                title="Price % of par used for IRR/MOIC"
+                              />
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-1">Scenario changes cash flows; price is an input</p>
                           </div>
                           <div>
                             <p className="text-xs text-gray-500">MOIC</p>
@@ -1106,9 +1070,7 @@ export default function DealModelerPage() {
                             <p className="font-semibold text-[#1E3A5F]">{result.wal.toFixed(1)}yr</p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-500">
-                              {result.rating === 'NR' ? 'Coupon' : 'Yield'}
-                            </p>
+                            <p className="text-xs text-gray-500">Coupon (SOFR + spread)</p>
                             <p className="font-semibold text-gray-600">
                               {result.yield !== null ? `${result.yield.toFixed(2)}%` : '--'}
                             </p>
@@ -1173,242 +1135,118 @@ export default function DealModelerPage() {
         </TabsContent>
 
         {/* ================================================================ */}
-        {/* WATERFALL TAB */}
+        {/* TRANCHE ANALYSIS TAB (Bond Returns) - Read Only */}
         {/* ================================================================ */}
-        <TabsContent value="waterfall" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Template Selection */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Deal Template</CardTitle>
-                <CardDescription>Select and customize collateral parameters</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DEAL_TEMPLATE_KEYS.map((key) => (
-                      <SelectItem key={key} value={key}>
-                        {DEAL_TEMPLATES[key].name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <div className="space-y-3 pt-4 border-t">
-                  <p className="text-xs text-gray-500">Customize to replicate a specific deal</p>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-sm">Collateral ($M)</Label>
-                      <Input
-                        type="number"
-                        value={customCollateral ?? baseTemplate.collateralBalance}
-                        onChange={(e) => setCustomCollateral(Number(e.target.value) || null)}
-                        className="w-24 h-8 text-right"
-                        min={50}
-                        max={1000}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-sm">WAC (%)</Label>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={customWac ?? baseTemplate.wac}
-                        onChange={(e) => setCustomWac(Number(e.target.value) || null)}
-                        className="w-24 h-8 text-right"
-                        min={1}
-                        max={25}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-sm">WAM (months)</Label>
-                      <Input
-                        type="number"
-                        value={customWam ?? baseTemplate.wam}
-                        onChange={(e) => setCustomWam(Number(e.target.value) || null)}
-                        className="w-24 h-8 text-right"
-                        min={12}
-                        max={360}
-                      />
-                    </div>
-                  </div>
-                  {(customWac || customCollateral || customWam) && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setCustomWac(null);
-                        setCustomCollateral(null);
-                        setCustomWam(null);
-                      }}
-                      className="text-xs text-gray-500"
-                    >
-                      Reset to defaults
-                    </Button>
-                  )}
+        <TabsContent value="tranche-analysis" className="space-y-6">
+          {/* Current Assumptions Summary (Read-Only) */}
+          <Card className="bg-slate-50 border-slate-200">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <span className="text-gray-500 text-sm font-normal">Deal Type (from Scenario Inputs):</span>
+                    <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
+                      <SelectTrigger className="w-48 h-8 bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DEAL_TEMPLATE_KEYS.map((key) => (
+                          <SelectItem key={key} value={key}>
+                            {DEAL_TEMPLATES[key].name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </CardTitle>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Scenario Inputs */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Scenario Assumptions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <Label className="flex items-center">
-                      CPR
-                      <Tip text="Annualized constant prepayment rate. No seasoning ramp." />
-                    </Label>
-                    <span className="text-sm font-mono">{cpr}%</span>
-                  </div>
-                  <Input
-                    type="range"
-                    min="0"
-                    max="50"
-                    value={cpr}
-                    onChange={(e) => setCpr(Number(e.target.value))}
-                  />
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="text-[#1E3A5F] hover:text-[#2E5A8F] p-0 h-auto"
+                  onClick={() => setActiveTab('scenario-inputs')}
+                >
+                  Edit Assumptions &rarr;
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* Key Assumptions - Always Visible */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div className="bg-white rounded-lg p-3 border border-slate-200">
+                  <p className="text-xs text-gray-500 mb-1">CPR</p>
+                  <p className="font-mono font-semibold text-[#1E3A5F]">{cpr}%</p>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <Label className="flex items-center">
-                      CDR
-                      <Tip text="Annualized constant default rate. No seasoning ramp." />
-                    </Label>
-                    <span className="text-sm font-mono">{cdr}%</span>
-                  </div>
-                  <Input
-                    type="range"
-                    min="0"
-                    max="30"
-                    value={cdr}
-                    onChange={(e) => setCdr(Number(e.target.value))}
-                  />
+                <div className="bg-white rounded-lg p-3 border border-slate-200">
+                  <p className="text-xs text-gray-500 mb-1">CDR</p>
+                  <p className="font-mono font-semibold text-[#1E3A5F]">{cdr}%</p>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <Label className="flex items-center">
-                      Recovery Rate
-                      <Tip text="Linked to Severity: Recovery = 100 - Severity. Changes here update Severity in Scenario tab." />
-                    </Label>
-                    <span className="text-sm font-mono">{recovery}%</span>
-                  </div>
-                  <Input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={recovery}
-                    onChange={(e) => setSeverity(100 - Number(e.target.value))}
-                  />
-                  <p className="text-xs text-gray-400">Severity: {severity}% (synced with Scenario tab)</p>
+                <div className="bg-white rounded-lg p-3 border border-slate-200">
+                  <p className="text-xs text-gray-500 mb-1">Loss Severity</p>
+                  <p className="font-mono font-semibold text-[#1E3A5F]">{severity}%</p>
+                  <p className="text-[10px] text-gray-400">Recovery: {recovery}%</p>
                 </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center">
-                    Projection (Months)
-                    <Tip text="Static pool projection period." />
-                  </Label>
-                  <Input
-                    type="number"
-                    value={months}
-                    onChange={(e) => setMonths(Number(e.target.value))}
-                    min={12}
-                    max={120}
-                  />
-                </div>
-                <div className="space-y-2 pt-3 border-t">
-                  <div className="flex justify-between">
-                    <Label className="flex items-center">
-                      SOFR (Base Rate)
-                      <Tip text="O/N SOFR rate for tranche coupons (SOFR + spread). Fetched from Bloomberg (SOFRRATE INDEX) on load." />
-                    </Label>
-                    <span className="text-sm font-mono">{effectiveSofr.toFixed(2)}%</span>
-                  </div>
-                  <Input
-                    type="range"
-                    min="0"
-                    max="8"
-                    step="0.05"
-                    value={effectiveSofr}
-                    onChange={(e) => setSofr(Number(e.target.value))}
-                  />
-                  <p className="text-xs text-gray-400">
-                    {sofr === null ? 'Loading from Bloomberg...' : 'Rate shock: adjust to stress interest expense'}
+                <div className="bg-white rounded-lg p-3 border border-slate-200">
+                  <p className="text-xs text-gray-500 mb-1">Excess Spread Adj.</p>
+                  <p className="font-mono font-semibold text-[#1E3A5F]">
+                    {excessSpreadBps >= 0 ? '+' : ''}{excessSpreadBps} bps
                   </p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
 
-            {/* Tranches & Triggers */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Capital Structure</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {template.tranches.map((tranche) => (
-                    <div key={tranche.name} className="flex items-center justify-between py-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="w-12 justify-center">
-                          {tranche.rating}
-                        </Badge>
-                        <span className="text-sm">{tranche.name}</span>
-                      </div>
-                      <span className="text-sm font-mono">${tranche.balance}M</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 pt-4 border-t">
-                  <p className="text-xs text-gray-500 mb-2">Triggers</p>
-                  {template.triggers.map((trigger) => {
-                    // Tooltips per trigger type - plain ASCII for compatibility
-                    const tipText = trigger.type === 'OC'
-                      ? 'OC = Collateral / Rated Notes. Breach -> sequential mode.'
-                      : trigger.type === 'CNL'
-                      ? 'CNL = Cumulative Net Loss / Original Collateral. Breach -> sequential mode.'
-                      : trigger.type === 'ARD'
-                      ? 'Post-ARD: excess spread turbos to senior paydown.'
-                      : trigger.type === 'INFO'
-                      ? 'Informational timing marker only (no waterfall effect).'
-                      : trigger.consequence;
-                    const isTimingTrigger = trigger.type === 'ARD' || trigger.type === 'INFO';
-                    return (
-                      <div key={trigger.name} className="flex items-center gap-2 text-xs py-1" title={tipText}>
-                        {isTimingTrigger ? (
-                          <Clock className="h-3 w-3 text-amber-500" />
-                        ) : (
-                          <AlertCircle className="h-3 w-3 text-amber-500" />
-                        )}
-                        <span>
-                          {trigger.name}:{' '}
-                          {isTimingTrigger ? `Month ${trigger.threshold}` : `${trigger.threshold}%`}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+              {/* Advanced Assumptions - Collapsible */}
+              <button
+                type="button"
+                onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                {showAdvancedSettings ? (
+                  <ChevronUp className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+                <span>{showAdvancedSettings ? 'Hide' : 'Show'} additional assumptions</span>
+              </button>
 
-          {/* Action Buttons */}
-          <div className="flex gap-4">
-            <Button onClick={handleRun} className="bg-[#1E3A5F] hover:bg-[#2E5A8F]">
-              <Play className="h-4 w-4 mr-2" /> Run Model
-            </Button>
-            <Button variant="outline" onClick={handleReset}>
-              <RotateCcw className="h-4 w-4 mr-2" /> Reset
-            </Button>
-          </div>
+              {showAdvancedSettings && (
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm pt-2 border-t border-slate-200">
+                  <div className="bg-white rounded-lg p-2 border border-slate-200">
+                    <p className="text-[10px] text-gray-500 mb-0.5">Projection</p>
+                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{months} mo</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 border border-slate-200">
+                    <p className="text-[10px] text-gray-500 mb-0.5">SOFR</p>
+                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{effectiveSofr.toFixed(2)}%</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 border border-slate-200">
+                    <p className="text-[10px] text-gray-500 mb-0.5">WAC</p>
+                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{template.wac.toFixed(1)}%</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 border border-slate-200">
+                    <p className="text-[10px] text-gray-500 mb-0.5">Servicing Fee</p>
+                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{servicingFeeBps} bps</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 border border-slate-200">
+                    <p className="text-[10px] text-gray-500 mb-0.5">Avg Price</p>
+                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">
+                      {(() => {
+                        const total = template.tranches.reduce((sum, t) => sum + t.balance, 0);
+                        const weighted = template.tranches.reduce(
+                          (sum, t, idx) => sum + t.balance * (tranchePricesPct[idx] ?? 100),
+                          0
+                        );
+                        const avg = total > 0 ? weighted / total : 100;
+                        return `${avg.toFixed(1)}%`;
+                      })()}
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 border border-slate-200">
+                    <p className="text-[10px] text-gray-500 mb-0.5">Collateral</p>
+                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">${template.collateralBalance}M</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Results Summary */}
           {waterfallResults && (
@@ -1453,18 +1291,21 @@ export default function DealModelerPage() {
                   </CardHeader>
                   <CardContent>
                     <p className="text-2xl font-bold text-[#1E3A5F]">
-                      {waterfallResults.finalOC.toFixed(1)}%
+                      {waterfallResults.finalOC >= 900 ? '--' : `${waterfallResults.finalOC.toFixed(1)}%`}
                     </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-gray-500">Trigger Breaches</CardTitle>
+                    <CardTitle className="text-sm text-gray-500">Breach Months</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-2xl font-bold text-[#1E3A5F]">
-                      {waterfallResults.triggerBreaches}
+                      {breachMonths}
                     </p>
+                    {firstBreachMonth && (
+                      <p className="text-xs text-gray-500 mt-1">First breach: M{firstBreachMonth}</p>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
@@ -1513,7 +1354,7 @@ export default function DealModelerPage() {
                             <span className="text-sm font-normal text-gray-500 ml-1">M{infoTrigger.threshold}</span>
                           </p>
                         ) : (
-                          <p className="text-xl font-bold text-gray-400">—</p>
+                          <p className="text-xl font-bold text-gray-400">--</p>
                         );
                       })()}
                     </CardContent>
@@ -1688,10 +1529,36 @@ export default function DealModelerPage() {
                 </CardContent>
               </Card>
 
-              {/* Tranche Summary */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Tranche Summary</CardTitle>
+              {/* Bond Returns by Tranche - HERO SECTION */}
+              <Card className="border-2 border-[#1E3A5F] shadow-lg overflow-hidden">
+                <div className="bg-gradient-to-r from-[#1C2156] to-[#1E3A5F] text-white px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 rounded-full p-2">
+                        <Calculator className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold tracking-tight">Bond Returns by Tranche</h2>
+                        <p className="text-white/80 text-sm">CF IRR, MOIC, and WAL based on modeled cash flows</p>
+                      </div>
+                    </div>
+                    <div className="hidden md:flex items-center gap-4 text-sm">
+                      <div className="text-right">
+                        <p className="text-white/60 text-xs uppercase tracking-wide">Key Metric</p>
+                        <p className="font-bold text-lg">CF IRR</p>
+                      </div>
+                      <div className="h-10 w-px bg-white/20" />
+                      <div className="text-right">
+                        <p className="text-white/60 text-xs uppercase tracking-wide">Tranches</p>
+                        <p className="font-bold text-lg">{template.tranches.length}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <CardHeader className="pt-4 pb-2">
+                  <CardDescription className="text-gray-600">
+                    Returns calculated from period-by-period cash flows under current scenario assumptions. Price inputs affect IRR/MOIC only; cash-flow routing is unchanged.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Table>
@@ -1705,7 +1572,7 @@ export default function DealModelerPage() {
                         <TableHead className="text-right" title="Cumulative interest shortfall (unpaid coupons)">Int. S/F</TableHead>
                         <TableHead className="text-right" title="Principal received (pro-rata or sequential)">Principal</TableHead>
                         <TableHead className="text-right" title="Principal not recovered">Prin. Loss</TableHead>
-                        <TableHead className="text-right" title="(Principal + Interest) / Original Balance. Fees excluded.">MOIC</TableHead>
+                        <TableHead className="text-right" title="(Principal + Interest) / Purchase Price. Fees excluded.">MOIC</TableHead>
                         <TableHead className="text-right bg-[#1E3A5F]/10 font-bold" title="Cash-flow IRR: annualized return based on modeled cash flows (at par).">CF IRR</TableHead>
                         <TableHead className="text-right" title="Approximate WAL from modeled principal timing.">WAL</TableHead>
                       </TableRow>
@@ -1724,7 +1591,7 @@ export default function DealModelerPage() {
                             className={`text-right ${ts.interestShortfall > 0.01 ? 'text-amber-600' : ''}`}
                             title="Cumulative interest shortfall (unpaid coupons)"
                           >
-                            {ts.interestShortfall > 0.01 ? `$${ts.interestShortfall.toFixed(1)}M` : '—'}
+                            {ts.interestShortfall > 0.01 ? `$${ts.interestShortfall.toFixed(1)}M` : '--'}
                           </TableCell>
                           <TableCell className="text-right">${ts.totalPrincipal.toFixed(1)}M</TableCell>
                           <TableCell
@@ -1967,7 +1834,7 @@ export default function DealModelerPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            {cf.turboPayment > 0 ? `$${cf.turboPayment.toFixed(2)}M` : '—'}
+                            {cf.turboPayment > 0 ? `$${cf.turboPayment.toFixed(2)}M` : '--'}
                           </TableCell>
                         </TableRow>
                       ))}

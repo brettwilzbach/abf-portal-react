@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { TrendingUp, TrendingDown, Minus, RefreshCw, Wifi } from 'lucide-react';
+import { RefreshCw, Wifi } from 'lucide-react';
 import { isBloombergAvailable } from '@/lib/bloomberg';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NotePad } from '@/components/ui/notepad';
@@ -181,54 +181,6 @@ export default function SpreadMonitorPage() {
             </Button>
           </div>
         </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">CLO AAA vs IG Corps</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-[#1E3A5F]">+50bps</p>
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" /> Attractive pickup
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">CLO BB vs HY Corps</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-[#1E3A5F]">+430bps</p>
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" /> Wide to historicals
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">Auto ABS vs IG Corps</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-[#1E3A5F]">-35bps</p>
-            <p className="text-xs text-yellow-600 flex items-center gap-1">
-              <Minus className="h-3 w-3" /> Fair value
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">Market Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-green-600">Tightening</p>
-            <p className="text-xs text-gray-500 flex items-center gap-1">
-              <TrendingDown className="h-3 w-3" /> Spreads narrowing YTD
-            </p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Filter Controls */}

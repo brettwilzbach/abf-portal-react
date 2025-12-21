@@ -8,20 +8,21 @@ import { DealTemplate } from '@/types/waterfall';
 export const DEAL_TEMPLATES: Record<string, DealTemplate> = {
   'auto-abs': {
     id: 'auto-abs',
-    name: 'Auto ABS',
-    description: 'Asset-backed securities collateralized by auto loans',
-    collateralType: 'Auto Loans',
+    name: 'Auto ABS (Subprime)',
+    description: 'Asset-backed securities collateralized by subprime auto loans',
+    collateralType: 'Subprime Auto Loans',
     collateralBalance: 300,
-    wac: 12.5,
+    wac: 17.5, // Typical subprime auto WAC per S&P/KBRA 2025 data (~17-18%)
     wam: 54,
     typicalWAL: '1.5-2.5 years',
     tranches: [
       // Subordination based on subprime auto benchmarks (GLS, ACA deals ~45-55% AAA CE)
-      { name: 'Class A', balance: 165, couponType: 'Floating', spread: 85, rating: 'AAA', subordination: 45.0 },
-      { name: 'Class B', balance: 40, couponType: 'Floating', spread: 145, rating: 'AA', subordination: 31.7 },
-      { name: 'Class C', balance: 35, couponType: 'Floating', spread: 195, rating: 'A', subordination: 20.0 },
-      { name: 'Class D', balance: 25, couponType: 'Floating', spread: 295, rating: 'BBB', subordination: 11.7 },
-      { name: 'Class E', balance: 20, couponType: 'Floating', spread: 525, rating: 'BB', subordination: 5.0 },
+      // Spreads updated to 2025 market levels
+      { name: 'Class A', balance: 165, couponType: 'Floating', spread: 110, rating: 'AAA', subordination: 45.0 },
+      { name: 'Class B', balance: 40, couponType: 'Floating', spread: 175, rating: 'AA', subordination: 31.7 },
+      { name: 'Class C', balance: 35, couponType: 'Floating', spread: 250, rating: 'A', subordination: 20.0 },
+      { name: 'Class D', balance: 25, couponType: 'Floating', spread: 375, rating: 'BBB', subordination: 11.7 },
+      { name: 'Class E', balance: 20, couponType: 'Floating', spread: 625, rating: 'BB', subordination: 5.0 },
       { name: 'Residual', balance: 15, couponType: 'Fixed', spread: 0, rating: 'NR', subordination: 0 },
     ],
     triggers: [
@@ -101,7 +102,7 @@ export const DEAL_TEMPLATES: Record<string, DealTemplate> = {
     description: 'Loans/leases for business equipment',
     collateralType: 'Commercial Equipment',
     collateralBalance: 310, // Increased to provide OC cushion
-    wac: 8.0,
+    wac: 10.5, // Increased from 8% to provide ~400bps excess spread over liability costs
     wam: 48,
     typicalWAL: '2.5-4.0 years',
     tranches: [
@@ -130,31 +131,36 @@ export const DEAL_TEMPLATES: Record<string, DealTemplate> = {
 // Helper to get all template keys
 export const DEAL_TEMPLATE_KEYS = Object.keys(DEAL_TEMPLATES) as (keyof typeof DEAL_TEMPLATES)[];
 
-// Rating colors for visualizations
+// Rating colors for visualizations - Bain Capital Credit brand palette
+// Must match getRatingColorClass for consistency across all charts
 export const RATING_COLORS: Record<string, string> = {
-  AAA: '#1E3A5F',
-  Aaa: '#1E3A5F',
-  AA: '#2E5A8F',
-  Aa: '#2E5A8F',
-  A: '#4A7AB0',
-  BBB: '#FF9800',
-  Baa: '#FF9800',
-  BB: '#E65100',
-  Ba: '#E65100',
-  B: '#C62828',
-  NR: '#9E9E9E',
+  AAA: '#1C2156',      // Deep navy (brand primary)
+  Aaa: '#1C2156',
+  AA: '#1E3278',       // Dark blue (brand accent)
+  Aa: '#1E3278',
+  A: '#0047BB',        // Primary blue
+  BBB: '#0779BF',      // Bright blue
+  Baa: '#0779BF',
+  BB: '#996B1F',       // Gold/bronze (darkened for contrast)
+  Ba: '#996B1F',
+  B: '#7A5518',        // Darker bronze
+  NR: '#4A4A4A',       // Charcoal gray
 };
 
-// Get rating color class (Tailwind)
+// Get rating color class (Tailwind) - Bain Capital Credit brand palette
+// Colors derived from baincapitalcredit.com - WCAG AA contrast compliant
 export function getRatingColorClass(rating: string): string {
   const colors: Record<string, string> = {
-    AAA: 'bg-[#1E3A5F] text-white',
-    AA: 'bg-[#2E5A8F] text-white',
-    A: 'bg-[#4A7AB0] text-white',
-    BBB: 'bg-amber-500 text-white',
-    BB: 'bg-orange-600 text-white',
-    B: 'bg-red-600 text-white',
-    NR: 'bg-gray-400 text-white',
+    // Investment grade: navy spectrum (brand primary #1C2156 → #0047BB)
+    AAA: 'bg-[#1C2156] text-white',       // Deep navy (brand primary)
+    AA: 'bg-[#1E3278] text-white',        // Dark blue (brand accent)
+    A: 'bg-[#0047BB] text-white',         // Primary blue
+    BBB: 'bg-[#0779BF] text-white',       // Bright blue
+    // High yield: bronze accent from brand
+    BB: 'bg-[#996B1F] text-white',        // Gold/bronze (darkened for contrast)
+    B: 'bg-[#7A5518] text-white',         // Darker bronze
+    // Equity/Residual: neutral
+    NR: 'bg-[#4A4A4A] text-white',        // Charcoal gray
   };
-  return colors[rating] || 'bg-gray-400 text-white';
+  return colors[rating] || 'bg-[#4A4A4A] text-white';
 }

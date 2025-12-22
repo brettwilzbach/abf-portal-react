@@ -211,15 +211,21 @@ function MarketHierarchy() {
 }
 
 function PublicVsPrivateChart() {
-  // Illustrative 2024 full-year issuance by channel
-  // Source: SIFMA, LCD, PitchBook estimates
+  // 2025 issuance estimates based on market data:
+  // - Auto ABS: KBRA forecasts ~$170B public (up from $160B in 2024)
+  // - CLO: LCD data shows ~$200B+ new issuance, plus ~$45B middle-market/private credit CLOs
+  // - Consumer: ~$70B public ABS, growing private credit share
+  // - Equipment: ~$23B public (SIFMA), private warehouse financing ~2-3x public
+  // - Real Estate: Private credit dominates (CMBS public ~$40B, private RE debt much larger)
+  // - Specialty: Data centers, whole business, esoteric - mix of 144A and private
+  // Sources: SIFMA, KBRA, LCD/PitchBook, Morgan Stanley Private Credit Outlook
   const data = [
-    { category: 'Auto ABS', public: 72, private: 45 },
-    { category: 'Consumer', public: 54, private: 38 },
-    { category: 'Equipment', public: 22, private: 28 },
-    { category: 'CLO/Loans', public: 98, private: 65 },
-    { category: 'Real Estate', public: 35, private: 82 },
-    { category: 'Specialty', public: 18, private: 32 },
+    { category: 'Auto ABS', public: 170, private: 55 },
+    { category: 'Consumer', public: 70, private: 45 },
+    { category: 'Equipment', public: 23, private: 50 },
+    { category: 'CLO/Loans', public: 200, private: 85 },
+    { category: 'Real Estate', public: 40, private: 120 },
+    { category: 'Specialty', public: 25, private: 40 },
   ];
 
   const totalPublic = data.reduce((sum, d) => sum + d.public, 0);
@@ -231,7 +237,7 @@ function PublicVsPrivateChart() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-base font-semibold text-slate-700">ABF Issuance: Public vs Private</h2>
-          <p className="text-xs text-slate-500">2024 full-year estimates ($B)</p>
+          <p className="text-xs text-slate-500">2025 full-year estimates ($B)</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-center">
@@ -369,18 +375,13 @@ function PortalModules() {
   const modules = [
     {
       icon: Calculator,
-      title: "Deal Mechanics",
-      features: ["Model Structured Credit products", "Compare capital structures", "Run waterfall scenarios"],
-    },
-    {
-      icon: TrendingDown,
-      title: "Spread Monitor",
-      features: ["Track ABS/CLO spreads", "Private vs public credit yields"],
+      title: "Deal Modeler",
+      features: ["Run waterfall cash flow scenarios", "Analyze tranche IRR, MOIC, and WAL", "Stress test with OC/CNL triggers"],
     },
     {
       icon: BarChart3,
       title: "Market Tracker",
-      features: ["Monitor new issuance", "Filter by collateral type"],
+      features: ["Track ABS/CLO sector spreads", "View relative value indicators", "Curated ABF news feed"],
     },
   ];
 

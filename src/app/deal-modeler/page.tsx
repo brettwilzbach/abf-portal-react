@@ -15,6 +15,7 @@ import {
   HelpCircle,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -351,22 +352,6 @@ export default function DealModelerPage() {
         </p>
       </div>
 
-      {/* Simplified Model Disclaimer */}
-      <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
-        <div className="flex items-start gap-3">
-          <Info className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700 mb-1">Simplified Model Assumptions</h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Constant CPR/CDR vectors (no seasoning curves), instant recovery (no lag), servicing fee applied via inputs,
-              bond pricing applied to IRR, no reinvestment. Pro-rata principal when triggers pass; sequential post-breach or post-ARD. Interest
-              paid senior-first, capped by available collections (shortfalls tracked). Excess spread to equity when
-              performing, turbos to seniors when sequential. OC = Collateral / Rated Notes. For relative value only.
-            </p>
-          </div>
-        </div>
-      </div>
-
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid grid-cols-4 w-full max-w-3xl">
           <TabsTrigger value="scenario-inputs" className="gap-2 text-xs sm:text-sm">
@@ -553,19 +538,25 @@ export default function DealModelerPage() {
                   <tbody>
                     <tr className="border-b">
                       <td className="py-2 text-gray-600">AAA Subordination</td>
-                      {compareStructures.map((key) => (
-                        <td key={key} className="text-center py-2 font-medium">
-                          {DEAL_TEMPLATES[key].tranches[0]?.subordination || 0}%
-                        </td>
-                      ))}
+                      {compareStructures.map((key) => {
+                        const aaaTranche = DEAL_TEMPLATES[key].tranches.find(t => t.rating === 'AAA');
+                        return (
+                          <td key={key} className="text-center py-2 font-medium">
+                            {aaaTranche?.subordination ?? 0}%
+                          </td>
+                        );
+                      })}
                     </tr>
                     <tr className="border-b">
                       <td className="py-2 text-gray-600">AAA Spread</td>
-                      {compareStructures.map((key) => (
-                        <td key={key} className="text-center py-2 font-medium">
-                          +{DEAL_TEMPLATES[key].tranches[0]?.spread || 0}bps
-                        </td>
-                      ))}
+                      {compareStructures.map((key) => {
+                        const aaaTranche = DEAL_TEMPLATES[key].tranches.find(t => t.rating === 'AAA');
+                        return (
+                          <td key={key} className="text-center py-2 font-medium">
+                            +{aaaTranche?.spread ?? 0}bps
+                          </td>
+                        );
+                      })}
                     </tr>
                     <tr className="border-b">
                       <td className="py-2 text-gray-600">Typical WAL</td>
@@ -574,6 +565,28 @@ export default function DealModelerPage() {
                           {DEAL_TEMPLATES[key].typicalWAL}
                         </td>
                       ))}
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 text-gray-600">OC Threshold</td>
+                      {compareStructures.map((key) => {
+                        const oc = DEAL_TEMPLATES[key].triggers.find(t => t.type === 'OC');
+                        return (
+                          <td key={key} className="text-center py-2 font-medium">
+                            {oc ? `${oc.threshold}%` : '--'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 text-gray-600">CNL Threshold</td>
+                      {compareStructures.map((key) => {
+                        const cnl = DEAL_TEMPLATES[key].triggers.find(t => t.type === 'CNL');
+                        return (
+                          <td key={key} className="text-center py-2 font-medium">
+                            {cnl ? `${cnl.threshold}%` : '--'}
+                          </td>
+                        );
+                      })}
                     </tr>
                     <tr className="border-b">
                       <td className="py-2 text-gray-600">Timing Marker</td>
@@ -605,6 +618,10 @@ export default function DealModelerPage() {
                   </tbody>
                 </table>
               </div>
+              {/* Legend for Timing Marker */}
+              <p className="text-[10px] text-slate-400 mt-3">
+                * INFO trigger (non-call period end) — informational only, no waterfall impact
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -779,11 +796,6 @@ export default function DealModelerPage() {
                     value={excessSpreadBps}
                     onChange={(e) => setExcessSpreadBps(Number(e.target.value))}
                   />
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>Tight</span>
-                    <span>Base</span>
-                    <span>Rich</span>
-                  </div>
                 </div>
 
                 {/* Advanced Settings Toggle */}
@@ -1117,279 +1129,66 @@ export default function DealModelerPage() {
         {/* ================================================================ */}
         {/* TRANCHE ANALYSIS TAB (Bond Returns) - Read Only */}
         {/* ================================================================ */}
-        <TabsContent value="tranche-analysis" className="space-y-6">
-          {/* Current Assumptions Summary (Read-Only) */}
-          <Card className="bg-slate-50 border-slate-200">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <span className="text-gray-500 text-sm font-normal">Deal Type (from Scenario Inputs):</span>
-                    <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
-                      <SelectTrigger className="w-48 h-8 bg-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DEAL_TEMPLATE_KEYS.map((key) => (
-                          <SelectItem key={key} value={key}>
-                            {DEAL_TEMPLATES[key].name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </CardTitle>
-                </div>
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="text-[#1E3A5F] hover:text-[#2E5A8F] p-0 h-auto"
-                  onClick={() => setActiveTab('scenario-inputs')}
-                >
-                  Edit Assumptions &rarr;
-                </Button>
+        <TabsContent value="tranche-analysis" className="space-y-4">
+          {/* Model Assumptions - Styled pills at top */}
+          <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-5 bg-[#1E3A5F] rounded-full" />
+                <span className="text-sm font-semibold text-slate-700">Model Assumptions</span>
+                <Badge variant="outline" className="text-[10px] font-normal border-slate-300 text-slate-500">
+                  {template.name}
+                </Badge>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Key Assumptions - Always Visible */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                <div className="bg-white rounded-lg p-3 border border-slate-200">
-                  <p className="text-xs text-gray-500 mb-1">CPR</p>
-                  <p className="font-mono font-semibold text-[#1E3A5F]">{cpr}%</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border border-slate-200">
-                  <p className="text-xs text-gray-500 mb-1">CDR</p>
-                  <p className="font-mono font-semibold text-[#1E3A5F]">{cdr}%</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border border-slate-200">
-                  <p className="text-xs text-gray-500 mb-1">Loss Severity</p>
-                  <p className="font-mono font-semibold text-[#1E3A5F]">{severity}%</p>
-                  <p className="text-[10px] text-gray-400">Recovery: {recovery}%</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border border-slate-200">
-                  <p className="text-xs text-gray-500 mb-1">Excess Spread Adj.</p>
-                  <p className="font-mono font-semibold text-[#1E3A5F]">
-                    {excessSpreadBps >= 0 ? '+' : ''}{excessSpreadBps} bps
-                  </p>
-                </div>
-              </div>
-
-              {/* Advanced Assumptions - Collapsible */}
-              <button
-                type="button"
-                onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
-                className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-[#1E3A5F] hover:text-[#2E5A8F] hover:bg-[#1E3A5F]/5 text-xs h-7 px-2"
+                onClick={() => setActiveTab('scenario-inputs')}
               >
-                {showAdvancedSettings ? (
-                  <ChevronUp className="h-3 w-3" />
-                ) : (
-                  <ChevronDown className="h-3 w-3" />
-                )}
-                <span>{showAdvancedSettings ? 'Hide' : 'Show'} additional assumptions</span>
-              </button>
-
-              {showAdvancedSettings && (
-                <div className="space-y-3 pt-2 border-t border-slate-200">
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
-                    <div className="bg-white rounded-lg p-2 border border-slate-200">
-                      <p className="text-[10px] text-gray-500 mb-0.5">Projection</p>
-                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{months} mo</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 border border-slate-200">
-                      <p className="text-[10px] text-gray-500 mb-0.5">SOFR</p>
-                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{effectiveSofr.toFixed(2)}%</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 border border-slate-200">
-                      <p className="text-[10px] text-gray-500 mb-0.5">WAC</p>
-                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{template.wac.toFixed(1)}%</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 border border-slate-200">
-                      <p className="text-[10px] text-gray-500 mb-0.5">Servicing Fee</p>
-                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{servicingFeeBps} bps</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 border border-slate-200">
-                      <p className="text-[10px] text-gray-500 mb-0.5">Avg Price</p>
-                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">
-                        {(() => {
-                          const total = template.tranches.reduce((sum, t) => sum + t.balance, 0);
-                          const weighted = template.tranches.reduce(
-                            (sum, t, idx) => sum + t.balance * (tranchePricesPct[idx] ?? 100),
-                            0
-                          );
-                          const avg = total > 0 ? weighted / total : 100;
-                          return `${avg.toFixed(1)}%`;
-                        })()}
-                      </p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 border border-slate-200">
-                      <p className="text-[10px] text-gray-500 mb-0.5">Collateral</p>
-                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">${template.collateralBalance}M</p>
-                    </div>
-                  </div>
-                  {/* Deal Triggers - Compact view in advanced settings */}
-                  <div className="text-xs text-gray-500">
-                    <span className="font-medium">Triggers:</span>{' '}
-                    {template.triggers.map((t, idx) => {
-                      let display = '';
-                      if (t.type === 'OC') display = `OC ≥ ${t.threshold}%`;
-                      else if (t.type === 'CNL') display = `CNL > ${t.threshold}%`;
-                      else if (t.type === 'ARD') display = `ARD M${t.threshold}`;
-                      else if (t.type === 'INFO') display = `${t.name} M${t.threshold}`;
-                      return display;
-                    }).filter(Boolean).join(' | ')}
-                    <span className="text-gray-400 ml-1">(see Structural Protections below)</span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                Edit Inputs
+                <ChevronRight className="h-3 w-3 ml-1" />
+              </Button>
+            </div>
+            <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
+              <div className="bg-white rounded-lg px-3 py-2 border border-slate-200 shadow-sm">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">CPR</p>
+                <p className="font-mono font-semibold text-slate-700">{cpr}%</p>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-2 border border-slate-200 shadow-sm">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">CDR</p>
+                <p className="font-mono font-semibold text-slate-700">{cdr}%</p>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-2 border border-slate-200 shadow-sm">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Severity</p>
+                <p className="font-mono font-semibold text-slate-700">{severity}%</p>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-2 border border-slate-200 shadow-sm">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Recovery</p>
+                <p className="font-mono font-semibold text-slate-700">{recovery}%</p>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-2 border border-slate-200 shadow-sm">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Months</p>
+                <p className="font-mono font-semibold text-slate-700">{months}</p>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-2 border border-slate-200 shadow-sm">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">SOFR</p>
+                <p className="font-mono font-semibold text-slate-700">{effectiveSofr.toFixed(2)}%</p>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-2 border border-slate-200 shadow-sm">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">WAC</p>
+                <p className="font-mono font-semibold text-slate-700">{template.wac.toFixed(1)}%</p>
+              </div>
+              <div className="bg-white rounded-lg px-3 py-2 border border-slate-200 shadow-sm">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Collateral</p>
+                <p className="font-mono font-semibold text-slate-700">${template.collateralBalance}M</p>
+              </div>
+            </div>
+          </div>
 
           {/* Results Summary */}
           {waterfallResults && (
-            <div className="space-y-6">
-              {/* Structural Protections - Prominent Trigger Display */}
-              <Card className="border-amber-200 bg-amber-50/30">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    Structural Protections
-                  </CardTitle>
-                  <CardDescription>
-                    Built-in safeguards that protect senior tranches when performance deteriorates
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="bg-white rounded-lg p-4 border border-amber-200">
-                    <div className="space-y-4">
-                      {template.triggers.map((trigger) => (
-                        <div key={trigger.name} className="border-b border-gray-100 pb-3 last:border-0 last:pb-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-semibold text-gray-800">{trigger.name}</span>
-                            <span className="font-mono font-semibold text-[#1E3A5F]">
-                              {trigger.type === 'OC' && `OC must stay ≥ ${trigger.threshold}%`}
-                              {trigger.type === 'CNL' && `Breach if CNL > ${trigger.threshold}%`}
-                              {trigger.type === 'ARD' && `Month ${trigger.threshold}`}
-                              {trigger.type === 'INFO' && `Month ${trigger.threshold}`}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500">{trigger.consequence}</p>
-                        </div>
-                      ))}
-                      {template.triggers.length === 0 && (
-                        <p className="text-xs text-gray-400 italic">No triggers defined for this structure</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Current Status */}
-                  <div className="mt-4 pt-3 border-t border-amber-200 flex items-center gap-4 text-sm">
-                    <span className="text-gray-600">Current Status:</span>
-                    {breachMonths === 0 ? (
-                      <Badge className="bg-green-100 text-green-800">All Triggers Passing</Badge>
-                    ) : (
-                      <Badge className="bg-red-100 text-red-800">
-                        {breachMonths} Month{breachMonths > 1 ? 's' : ''} with Breach
-                        {firstBreachMonth && ` (first: M${firstBreachMonth})`}
-                      </Badge>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-gray-500 flex items-center">
-                      Final CNL
-                      <Tip text="Cumulative Net Loss / Original Collateral at deal end." />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-[#1E3A5F]">
-                      {waterfallResults.finalCNL.toFixed(1)}%
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-gray-500 flex items-center">
-                      Final OC Ratio
-                      <Tip text="Collateral / Rated Notes (equity excluded)." />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-[#1E3A5F]">
-                      {waterfallResults.finalOC >= 900 ? '--' : `${waterfallResults.finalOC.toFixed(1)}%`}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-gray-500">Breach Months</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-[#1E3A5F]">
-                      {breachMonths}
-                    </p>
-                    {firstBreachMonth && (
-                      <p className="text-xs text-gray-500 mt-1">First breach: M{firstBreachMonth}</p>
-                    )}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-gray-500">Periods Modeled</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-[#1E3A5F]">
-                      {waterfallResults.cashFlows.length}
-                    </p>
-                  </CardContent>
-                </Card>
-                {/* Only show ARD status for deals with true ARD triggers (not INFO) */}
-                {template.triggers.some(t => t.type === 'ARD') ? (
-                  <Card className={waterfallResults.ardTriggered ? 'border-amber-400 bg-amber-50' : ''}>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm text-gray-500 flex items-center gap-1">
-                        <Clock className="h-3 w-3" /> ARD Status
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p
-                        className={`text-xl font-bold ${
-                          waterfallResults.ardTriggered ? 'text-amber-600' : 'text-green-600'
-                        }`}
-                      >
-                        {waterfallResults.ardTriggered
-                          ? `Active (M${waterfallResults.ardMonth})`
-                          : 'Not Triggered'}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm text-gray-500 flex items-center gap-1">
-                        <Clock className="h-3 w-3" /> Timing
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {(() => {
-                        const infoTrigger = template.triggers.find(t => t.type === 'INFO');
-                        return infoTrigger ? (
-                          <p className="text-lg font-bold text-[#1E3A5F]" title={infoTrigger.consequence}>
-                            {infoTrigger.name}
-                            <span className="text-sm font-normal text-gray-500 ml-1">M{infoTrigger.threshold}</span>
-                          </p>
-                        ) : (
-                          <p className="text-xl font-bold text-gray-400">--</p>
-                        );
-                      })()}
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-
+            <div className="space-y-4">
               {/* Bond Returns by Tranche - HERO SECTION */}
               <Card className="border-2 border-[#1E3A5F] shadow-lg overflow-hidden">
                 <div className="bg-gradient-to-r from-[#1C2156] to-[#1E3A5F] text-white px-6 py-4">
@@ -1427,7 +1226,7 @@ export default function DealModelerPage() {
                       <TableRow>
                         <TableHead>Tranche</TableHead>
                         <TableHead>Rating</TableHead>
-                        <TableHead className="text-right" title="Purchase price ($M) - affects IRR/MOIC">Price</TableHead>
+                        <TableHead className="text-right" title="Purchase price (% of par) - affects IRR/MOIC">Price</TableHead>
                         <TableHead className="text-right">Original</TableHead>
                         <TableHead className="text-right" title="Interest received from waterfall">Interest</TableHead>
                         <TableHead className="text-right" title="Cumulative interest shortfall (unpaid coupons)">Int. S/F</TableHead>
@@ -1448,7 +1247,7 @@ export default function DealModelerPage() {
                               <Badge className={getRatingColorClass(ts.rating)}>{ts.rating}</Badge>
                             </TableCell>
                             <TableCell className="text-right font-mono text-sm">
-                              ${((tranchePricesPct[idx] ?? 100) / 100 * ts.originalBalance).toFixed(1)}M
+                              {(tranchePricesPct[idx] ?? 100).toFixed(0)}%
                             </TableCell>
                             <TableCell className="text-right">${ts.originalBalance.toFixed(1)}M</TableCell>
                             <TableCell className="text-right">${ts.totalInterest.toFixed(1)}M</TableCell>
@@ -1473,6 +1272,69 @@ export default function DealModelerPage() {
                   </Table>
                 </CardContent>
               </Card>
+
+              {/* Summary Stats & Protections - Combined styled section */}
+              <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1.5 h-5 bg-[#1E3A5F] rounded-full" />
+                  <span className="text-sm font-semibold text-slate-700">Deal Performance Summary</span>
+                  {breachMonths === 0 ? (
+                    <Badge className="bg-green-100 text-green-700 text-[10px] ml-auto">All Tests Passing</Badge>
+                  ) : (
+                    <Badge className="bg-red-100 text-red-700 text-[10px] ml-auto">
+                      {breachMonths} Breach{breachMonths > 1 ? 'es' : ''}
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+                  <div className="bg-white rounded-lg px-3 py-2.5 border border-slate-200 shadow-sm">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Final CNL</p>
+                    <p className="text-lg font-bold text-[#1E3A5F] font-mono">{waterfallResults.finalCNL.toFixed(1)}%</p>
+                  </div>
+                  <div className="bg-white rounded-lg px-3 py-2.5 border border-slate-200 shadow-sm">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Final OC</p>
+                    <p className="text-lg font-bold text-[#1E3A5F] font-mono">
+                      {waterfallResults.finalOC >= 900 ? '--' : `${waterfallResults.finalOC.toFixed(1)}%`}
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-lg px-3 py-2.5 border border-slate-200 shadow-sm">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Breach Months</p>
+                    <p className={`text-lg font-bold font-mono ${breachMonths > 0 ? 'text-red-600' : 'text-[#1E3A5F]'}`}>{breachMonths}</p>
+                  </div>
+                  <div className="bg-white rounded-lg px-3 py-2.5 border border-slate-200 shadow-sm">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Periods</p>
+                    <p className="text-lg font-bold text-[#1E3A5F] font-mono">{waterfallResults.cashFlows.length}</p>
+                  </div>
+                  <div className={`rounded-lg px-3 py-2.5 border shadow-sm ${waterfallResults.ardTriggered ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">
+                      {template.triggers.some(t => t.type === 'ARD') ? 'ARD Status' : 'Timing'}
+                    </p>
+                    <p className={`text-lg font-bold font-mono ${waterfallResults.ardTriggered ? 'text-amber-600' : 'text-[#1E3A5F]'}`}>
+                      {template.triggers.some(t => t.type === 'ARD')
+                        ? (waterfallResults.ardTriggered ? `Month ${waterfallResults.ardMonth}` : 'Clear')
+                        : (template.triggers.find(t => t.type === 'INFO')?.name || '--')}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Trigger Thresholds - inline pills */}
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider mr-1">Triggers:</span>
+                  {template.triggers.map((trigger) => (
+                    <div key={trigger.name} className="inline-flex items-center gap-1.5 bg-white rounded-full px-2.5 py-1 border border-slate-200 text-xs">
+                      <span className="text-slate-500">{trigger.name}</span>
+                      <span className="font-mono font-medium text-[#1E3A5F]">
+                        {trigger.type === 'OC' && `≥${trigger.threshold}%`}
+                        {trigger.type === 'CNL' && `>${trigger.threshold}%`}
+                        {trigger.type === 'ARD' && `Month ${trigger.threshold}`}
+                        {trigger.type === 'INFO' && `Month ${trigger.threshold}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               {/* Loss Allocation by Tranche */}
               <Card>
@@ -1581,6 +1443,13 @@ export default function DealModelerPage() {
                   })()}
                 </CardContent>
               </Card>
+
+              {/* Simplified Model Assumptions - Disclaimer at bottom */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  <span className="font-medium">Simplified Model:</span> Constant CPR/CDR vectors (no seasoning curves), instant recovery (no lag), servicing fee applied via inputs, bond pricing applied to IRR, no reinvestment. Pro-rata principal when triggers pass; sequential post-breach or post-ARD. Interest paid senior-first, capped by available collections (shortfalls tracked). Excess spread to equity when performing, turbos to seniors when sequential. OC = Collateral / Rated Notes. For relative value only.
+                </p>
+              </div>
             </div>
           )}
         </TabsContent>
@@ -1588,88 +1457,350 @@ export default function DealModelerPage() {
         {/* ================================================================ */}
         {/* CASH FLOWS TAB */}
         {/* ================================================================ */}
-        <TabsContent value="cashflows">
+        <TabsContent value="cashflows" className="space-y-4">
           {waterfallResults && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-base">Monthly Cash Flows</CardTitle>
-                  <CardDescription>
-                    {waterfallResults.ardTriggered && (
-                      <span className="text-amber-600 flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        ARD triggered at Month {waterfallResults.ardMonth} - Excess cash diverts to
-                        accelerate senior paydown
-                      </span>
+            <>
+              {/* Trigger Timeline - Institutional Style */}
+              <div className="bg-white border border-slate-200 rounded p-5">
+                {/* Header with left-aligned title and divider */}
+                <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                  <h3 className="text-sm font-medium text-slate-700">Trigger Timeline</h3>
+                  <div className="flex items-center gap-4 text-[9px]">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-[#3D5A73]" />
+                      <span className="text-slate-500">Pass</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-[#8B4D4D]" />
+                      <span className="text-slate-500">Breach</span>
+                    </div>
+                    {template.triggers.some(t => t.type === 'ARD') && (
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 bg-[#8B7355]" />
+                        <span className="text-slate-500">ARD</span>
+                      </div>
                     )}
-                  </CardDescription>
+                  </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={handleExportCSV}>
-                  <Download className="h-4 w-4 mr-1" /> Export CSV
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <div className="max-h-[500px] overflow-y-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Period</TableHead>
-                        <TableHead className="text-right">Collateral Start</TableHead>
-                        <TableHead className="text-right">Sched Prin</TableHead>
-                        <TableHead className="text-right">Prepays</TableHead>
-                        <TableHead className="text-right">Defaults</TableHead>
-                        <TableHead className="text-right">Losses</TableHead>
-                        <TableHead className="text-right">CNL %</TableHead>
-                        <TableHead className="text-right">OC %</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>ARD</TableHead>
-                        <TableHead className="text-right">Turbo</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {waterfallResults.cashFlows.map((cf) => (
-                        <TableRow
-                          key={cf.period}
-                          className={cf.ardActive ? 'bg-amber-50' : ''}
-                        >
-                          <TableCell>{cf.period}</TableCell>
-                          <TableCell className="text-right">${cf.collateralStart.toFixed(1)}M</TableCell>
-                          <TableCell className="text-right">
-                            ${cf.scheduledPrincipal.toFixed(2)}M
-                          </TableCell>
-                          <TableCell className="text-right">${cf.prepayments.toFixed(2)}M</TableCell>
-                          <TableCell className="text-right">${cf.defaults.toFixed(2)}M</TableCell>
-                          <TableCell className="text-right text-red-600">
-                            ${cf.losses.toFixed(2)}M
-                          </TableCell>
-                          <TableCell className="text-right">{cf.cnlPercent.toFixed(2)}%</TableCell>
-                          <TableCell className="text-right">{cf.ocPercent.toFixed(1)}%</TableCell>
-                          <TableCell>
-                            <Badge
-                              className={
-                                cf.triggerStatus === 'Pass'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
-                              }
-                            >
-                              {cf.triggerStatus}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {cf.ardActive && (
-                              <Badge className="bg-amber-100 text-amber-800">Active</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {cf.turboPayment > 0 ? `$${cf.turboPayment.toFixed(2)}M` : '--'}
-                          </TableCell>
+
+                {/* Timeline visualization */}
+                {(() => {
+                  const totalPeriods = waterfallResults.cashFlows.length;
+                  const ardThreshold = template.triggers.find(t => t.type === 'ARD')?.threshold;
+                  const ocThreshold = template.triggers.find(t => t.type === 'OC')?.threshold ?? 0;
+                  const cnlTrigger = template.triggers.find(t => t.type === 'CNL');
+                  const cnlThreshold = cnlTrigger?.threshold ?? Infinity;
+
+                  // Find first breach and determine type
+                  const firstBreachCf = waterfallResults.cashFlows.find(cf => cf.triggerStatus === 'Fail');
+                  const firstBreach = firstBreachCf?.period;
+                  let breachType = '';
+                  if (firstBreachCf) {
+                    const ocBreached = firstBreachCf.ocPercent < ocThreshold;
+                    const cnlBreached = cnlTrigger && firstBreachCf.cnlPercent > cnlThreshold;
+                    if (ocBreached && cnlBreached) {
+                      breachType = 'OC + CNL';
+                    } else if (ocBreached) {
+                      breachType = 'OC';
+                    } else if (cnlBreached) {
+                      breachType = 'CNL';
+                    } else {
+                      breachType = 'Trigger';
+                    }
+                  }
+
+                  // Build segments for visualization
+                  const segments: Array<{ start: number; end: number; type: 'pass' | 'breach' | 'ard' }> = [];
+                  let currentType: 'pass' | 'breach' | 'ard' | null = null;
+                  let segmentStart = 1;
+
+                  waterfallResults.cashFlows.forEach((cf, idx) => {
+                    let type: 'pass' | 'breach' | 'ard' = 'pass';
+                    if (cf.triggerStatus === 'Fail') type = 'breach';
+                    else if (cf.ardActive) type = 'ard';
+
+                    if (type !== currentType) {
+                      if (currentType !== null) {
+                        segments.push({ start: segmentStart, end: cf.period - 1, type: currentType });
+                      }
+                      currentType = type;
+                      segmentStart = cf.period;
+                    }
+                    if (idx === waterfallResults.cashFlows.length - 1) {
+                      segments.push({ start: segmentStart, end: cf.period, type: currentType });
+                    }
+                  });
+
+                  // Muted institutional colors: desaturated navy, slate-red, muted amber
+                  const getSegmentStyle = (type: string) => {
+                    switch (type) {
+                      case 'pass': return 'bg-[#3D5A73]'; // Muted slate-navy
+                      case 'breach': return 'bg-[#8B4D4D]'; // Desaturated burgundy
+                      case 'ard': return 'bg-[#8B7355]'; // Muted bronze
+                      default: return 'bg-slate-300';
+                    }
+                  };
+
+                  return (
+                    <div className="relative">
+                      {/* Thin timeline bar with minimal radius */}
+                      <div className="h-5 bg-slate-100 border border-slate-200 rounded-sm overflow-hidden flex">
+                        {segments.map((seg, idx) => {
+                          const width = ((seg.end - seg.start + 1) / totalPeriods) * 100;
+                          return (
+                            <div
+                              key={idx}
+                              className={`${getSegmentStyle(seg.type)} h-full relative`}
+                              style={{ width: `${width}%` }}
+                              title={`${seg.type === 'pass' ? 'Pass' : seg.type === 'breach' ? 'Breach' : 'ARD'}: M${seg.start}–${seg.end}`}
+                            />
+                          );
+                        })}
+                      </div>
+
+                      {/* Markers */}
+                      <div className="relative h-5 mt-1">
+                        {/* First breach marker with type label */}
+                        {firstBreach && (
+                          <div
+                            className="absolute flex flex-col items-center"
+                            style={{ left: `${((firstBreach - 0.5) / totalPeriods) * 100}%`, transform: 'translateX(-50%)' }}
+                          >
+                            <div className="w-px h-2 bg-[#8B4D4D]" />
+                            <span className="text-[8px] text-[#8B4D4D] font-normal whitespace-nowrap">{breachType} M{firstBreach}</span>
+                          </div>
+                        )}
+                        {/* ARD threshold marker */}
+                        {ardThreshold && ardThreshold <= totalPeriods && (
+                          <div
+                            className="absolute flex flex-col items-center"
+                            style={{ left: `${((ardThreshold - 0.5) / totalPeriods) * 100}%`, transform: 'translateX(-50%)' }}
+                          >
+                            <div className="w-px h-2 bg-[#8B7355]" />
+                            <span className="text-[8px] text-[#8B7355] font-normal whitespace-nowrap">ARD M{ardThreshold}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Month scale - subtle gray labels */}
+                      <div className="flex justify-between text-[8px] text-slate-400 mt-2">
+                        <span>1</span>
+                        {totalPeriods > 24 && <span>{Math.floor(totalPeriods / 4)}</span>}
+                        {totalPeriods > 12 && <span>{Math.floor(totalPeriods / 2)}</span>}
+                        {totalPeriods > 24 && <span>{Math.floor(totalPeriods * 3 / 4)}</span>}
+                        <span>{totalPeriods}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Collateral Runoff Drivers - Institutional Style */}
+              <div className="bg-white border border-slate-200 rounded p-5">
+                {/* Header with left-aligned title and divider */}
+                <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-sm font-medium text-slate-700">Collateral Runoff</h3>
+                    <p className="text-[9px] text-slate-400 mt-0.5">Monthly principal runoff by source ($M)</p>
+                  </div>
+                  <div className="flex items-center gap-4 text-[9px]">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-[#3D5A73]" />
+                      <span className="text-slate-500">Scheduled</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-[#5B7A94]" />
+                      <span className="text-slate-500">Prepays</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-[#8B7355]" />
+                      <span className="text-slate-500">Defaults</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-px bg-[#8B4D4D]" style={{ borderTop: '1px dashed #8B4D4D' }} />
+                      <span className="text-slate-500">Net Loss</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stacked Area Chart */}
+                <div style={{ height: '240px' }}>
+                  {(() => {
+                    const cashFlows = waterfallResults.cashFlows;
+                    const step = cashFlows.length > 60 ? 3 : cashFlows.length > 36 ? 2 : 1;
+                    const chartData = cashFlows.filter((_, i) => i % step === 0 || i === cashFlows.length - 1).map(cf => ({
+                      month: cf.period,
+                      scheduledPrincipal: cf.scheduledPrincipal,
+                      prepayments: cf.prepayments,
+                      defaults: cf.defaults,
+                      losses: cf.losses,
+                      totalRunoff: cf.scheduledPrincipal + cf.prepayments + cf.defaults,
+                    }));
+
+                    const maxRunoff = Math.max(...chartData.map(d => d.totalRunoff));
+                    const yAxisMax = Math.ceil(maxRunoff * 1.1) || 1;
+
+                    return (
+                      <div className="relative h-full">
+                        {/* Y-axis labels */}
+                        <div className="absolute left-0 top-0 bottom-5 w-8 flex flex-col justify-between text-[8px] text-slate-400">
+                          <span>{yAxisMax.toFixed(1)}</span>
+                          <span>{(yAxisMax / 2).toFixed(1)}</span>
+                          <span>0</span>
+                        </div>
+
+                        {/* Chart area */}
+                        <div className="ml-10 mr-2 h-[calc(100%-20px)] relative border-l border-b border-slate-200">
+                          <svg viewBox={`0 0 ${chartData.length * 10} 100`} preserveAspectRatio="none" className="w-full h-full">
+                            {/* Subtle grid lines */}
+                            <line x1="0" y1="25" x2={chartData.length * 10} y2="25" stroke="#f1f5f9" strokeWidth="0.5" />
+                            <line x1="0" y1="50" x2={chartData.length * 10} y2="50" stroke="#f1f5f9" strokeWidth="0.5" />
+                            <line x1="0" y1="75" x2={chartData.length * 10} y2="75" stroke="#f1f5f9" strokeWidth="0.5" />
+
+                            {/* Scheduled Principal (bottom - muted navy) */}
+                            <path
+                              d={`M0,100 ${chartData.map((d, i) => `L${i * 10},${100 - (d.scheduledPrincipal / yAxisMax) * 100}`).join(' ')} L${(chartData.length - 1) * 10},100 Z`}
+                              fill="#3D5A73"
+                              opacity="0.85"
+                            />
+
+                            {/* Prepayments (middle - lighter slate-blue) */}
+                            <path
+                              d={`${chartData.map((d, i) => {
+                                const y1 = 100 - (d.scheduledPrincipal / yAxisMax) * 100;
+                                return i === 0 ? `M0,${y1}` : `L${i * 10},${y1}`;
+                              }).join(' ')} ${chartData.slice().reverse().map((d, i) => {
+                                const y2 = 100 - ((d.scheduledPrincipal + d.prepayments) / yAxisMax) * 100;
+                                return `L${(chartData.length - 1 - i) * 10},${y2}`;
+                              }).join(' ')} Z`}
+                              fill="#5B7A94"
+                              opacity="0.85"
+                            />
+
+                            {/* Defaults (top - muted bronze) */}
+                            <path
+                              d={`${chartData.map((d, i) => {
+                                const y1 = 100 - ((d.scheduledPrincipal + d.prepayments) / yAxisMax) * 100;
+                                return i === 0 ? `M0,${y1}` : `L${i * 10},${y1}`;
+                              }).join(' ')} ${chartData.slice().reverse().map((d, i) => {
+                                const y2 = 100 - (d.totalRunoff / yAxisMax) * 100;
+                                return `L${(chartData.length - 1 - i) * 10},${y2}`;
+                              }).join(' ')} Z`}
+                              fill="#8B7355"
+                              opacity="0.8"
+                            />
+
+                            {/* Net Losses line (muted red dashed) */}
+                            <path
+                              d={`M0,${100 - (chartData[0].losses / yAxisMax) * 100} ${chartData.slice(1).map((d, i) =>
+                                `L${(i + 1) * 10},${100 - (d.losses / yAxisMax) * 100}`
+                              ).join(' ')}`}
+                              fill="none"
+                              stroke="#8B4D4D"
+                              strokeWidth="1.5"
+                              strokeDasharray="3,2"
+                            />
+                          </svg>
+                        </div>
+
+                        {/* X-axis labels */}
+                        <div className="ml-10 mr-2 flex justify-between text-[8px] text-slate-400 mt-1">
+                          <span>1</span>
+                          <span>{Math.floor(cashFlows.length / 4)}</span>
+                          <span>{Math.floor(cashFlows.length / 2)}</span>
+                          <span>{Math.floor(cashFlows.length * 3 / 4)}</span>
+                          <span>{cashFlows.length}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Monthly Cash Flows Table */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-5 bg-[#1E3A5F] rounded-full" />
+                    <div>
+                      <CardTitle className="text-base">Monthly Cash Flows</CardTitle>
+                      <CardDescription>
+                        {waterfallResults.ardTriggered && (
+                          <span className="text-amber-600 flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            ARD triggered at Month {waterfallResults.ardMonth}
+                          </span>
+                        )}
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleExportCSV}>
+                    <Download className="h-4 w-4 mr-1" /> Export CSV
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="max-h-[500px] overflow-auto">
+                    <Table className="min-w-[900px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-16">Period</TableHead>
+                          <TableHead className="text-right w-28">Collateral</TableHead>
+                          <TableHead className="text-right w-24">Sched Prin</TableHead>
+                          <TableHead className="text-right w-24">Prepays</TableHead>
+                          <TableHead className="text-right w-24">Defaults</TableHead>
+                          <TableHead className="text-right w-20">Losses</TableHead>
+                          <TableHead className="text-right w-20">CNL %</TableHead>
+                          <TableHead className="text-right w-20">OC %</TableHead>
+                          <TableHead className="w-20">Status</TableHead>
+                          <TableHead className="w-20">ARD</TableHead>
+                          <TableHead className="text-right w-24">Turbo</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {waterfallResults.cashFlows.map((cf) => (
+                          <TableRow
+                            key={cf.period}
+                            className={cf.ardActive ? 'bg-amber-50' : cf.triggerStatus === 'Fail' ? 'bg-red-50/50' : ''}
+                          >
+                            <TableCell className="font-mono text-sm">{cf.period}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">${cf.collateralStart.toFixed(1)}M</TableCell>
+                            <TableCell className="text-right font-mono text-sm">
+                              ${cf.scheduledPrincipal.toFixed(2)}M
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm">${cf.prepayments.toFixed(2)}M</TableCell>
+                            <TableCell className="text-right font-mono text-sm">${cf.defaults.toFixed(2)}M</TableCell>
+                            <TableCell className="text-right font-mono text-sm text-red-600">
+                              ${cf.losses.toFixed(2)}M
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm">{cf.cnlPercent.toFixed(2)}%</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{cf.ocPercent.toFixed(1)}%</TableCell>
+                            <TableCell>
+                              <Badge
+                                className={
+                                  cf.triggerStatus === 'Pass'
+                                    ? 'bg-green-100 text-green-800 text-[10px]'
+                                    : 'bg-red-100 text-red-800 text-[10px]'
+                                }
+                              >
+                                {cf.triggerStatus}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {cf.ardActive && (
+                                <Badge className="bg-amber-100 text-amber-800 text-[10px]">Active</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm">
+                              {cf.turboPayment > 0 ? `$${cf.turboPayment.toFixed(2)}M` : '--'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
           )}
         </TabsContent>
       </Tabs>

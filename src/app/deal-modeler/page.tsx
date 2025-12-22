@@ -1447,7 +1447,7 @@ export default function DealModelerPage() {
               {/* Simplified Model Assumptions - Disclaimer at bottom */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                  <span className="font-medium">Simplified Model:</span> Constant CPR/CDR vectors (no seasoning curves), instant recovery (no lag), servicing fee applied via inputs, bond pricing applied to IRR, no reinvestment. Pro-rata principal when triggers pass; sequential post-breach or post-ARD. Interest paid senior-first, capped by available collections (shortfalls tracked). Excess spread to equity when performing, turbos to seniors when sequential. OC = Collateral / Rated Notes. For relative value only.
+                  <span className="font-medium">Simplified, representative model:</span> Constant CPR/CDR vectors (no seasoning curves), instant recovery (no liquidation lag), servicing fee applied via inputs, price inputs applied to IRR/MOIC, no reinvestment. Pro-rata principal when triggers pass; sequential post-breach or post-ARD. Interest paid senior-first, capped by available collections (shortfalls tracked). Excess spread to equity when performing; retained excess turbos to seniors when sequential. OC = Collateral / Total Rated Notes (equity excluded). For relative-value and educational purposes only.
                 </p>
               </div>
             </div>
@@ -1595,125 +1595,181 @@ export default function DealModelerPage() {
                 })()}
               </div>
 
-              {/* Collateral Runoff Drivers - Institutional Style */}
-              <div className="bg-white border border-slate-200 rounded p-5">
-                {/* Header with left-aligned title and divider */}
-                <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
-                  <div>
-                    <h3 className="text-sm font-medium text-slate-700">Collateral Runoff</h3>
-                    <p className="text-[9px] text-slate-400 mt-0.5">Monthly principal runoff by source ($M)</p>
+              {/* Two-chart grid: Principal Runoff + Interest Income */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Principal Runoff Drivers */}
+                <div className="bg-white border border-slate-200 rounded p-5">
+                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-sm font-medium text-slate-700">Principal Runoff Drivers</h3>
+                      <p className="text-[9px] text-slate-400 mt-0.5">Monthly principal paydown by source ($M)</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-[9px]">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 bg-[#3D5A73]" />
+                        <span className="text-slate-500">Sched</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 bg-[#5B7A94]" />
+                        <span className="text-slate-500">Prepay</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 bg-[#8B7355]" />
+                        <span className="text-slate-500">Default</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 text-[9px]">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-2.5 h-2.5 bg-[#3D5A73]" />
-                      <span className="text-slate-500">Scheduled</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-2.5 h-2.5 bg-[#5B7A94]" />
-                      <span className="text-slate-500">Prepays</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-2.5 h-2.5 bg-[#8B7355]" />
-                      <span className="text-slate-500">Defaults</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-px bg-[#8B4D4D]" style={{ borderTop: '1px dashed #8B4D4D' }} />
-                      <span className="text-slate-500">Net Loss</span>
-                    </div>
+
+                  <div style={{ height: '200px' }}>
+                    {(() => {
+                      const cashFlows = waterfallResults.cashFlows;
+                      const step = cashFlows.length > 60 ? 3 : cashFlows.length > 36 ? 2 : 1;
+                      const chartData = cashFlows.filter((_, i) => i % step === 0 || i === cashFlows.length - 1).map(cf => ({
+                        month: cf.period,
+                        scheduledPrincipal: cf.scheduledPrincipal,
+                        prepayments: cf.prepayments,
+                        defaults: cf.defaults,
+                        totalRunoff: cf.scheduledPrincipal + cf.prepayments + cf.defaults,
+                      }));
+
+                      const maxRunoff = Math.max(...chartData.map(d => d.totalRunoff));
+                      const yAxisMax = Math.ceil(maxRunoff * 1.1) || 1;
+
+                      return (
+                        <div className="relative h-full">
+                          <div className="absolute left-0 top-0 bottom-5 w-8 flex flex-col justify-between text-[8px] text-slate-400">
+                            <span>{yAxisMax.toFixed(1)}</span>
+                            <span>{(yAxisMax / 2).toFixed(1)}</span>
+                            <span>0</span>
+                          </div>
+
+                          <div className="ml-10 mr-2 h-[calc(100%-20px)] relative border-l border-b border-slate-200">
+                            <svg viewBox={`0 0 ${chartData.length * 10} 100`} preserveAspectRatio="none" className="w-full h-full">
+                              <line x1="0" y1="25" x2={chartData.length * 10} y2="25" stroke="#f1f5f9" strokeWidth="0.5" />
+                              <line x1="0" y1="50" x2={chartData.length * 10} y2="50" stroke="#f1f5f9" strokeWidth="0.5" />
+                              <line x1="0" y1="75" x2={chartData.length * 10} y2="75" stroke="#f1f5f9" strokeWidth="0.5" />
+
+                              {/* Scheduled Principal (bottom) */}
+                              <path
+                                d={`M0,100 ${chartData.map((d, i) => `L${i * 10},${100 - (d.scheduledPrincipal / yAxisMax) * 100}`).join(' ')} L${(chartData.length - 1) * 10},100 Z`}
+                                fill="#3D5A73"
+                                opacity="0.85"
+                              />
+
+                              {/* Prepayments (middle) */}
+                              <path
+                                d={`${chartData.map((d, i) => {
+                                  const y1 = 100 - (d.scheduledPrincipal / yAxisMax) * 100;
+                                  return i === 0 ? `M0,${y1}` : `L${i * 10},${y1}`;
+                                }).join(' ')} ${chartData.slice().reverse().map((d, i) => {
+                                  const y2 = 100 - ((d.scheduledPrincipal + d.prepayments) / yAxisMax) * 100;
+                                  return `L${(chartData.length - 1 - i) * 10},${y2}`;
+                                }).join(' ')} Z`}
+                                fill="#5B7A94"
+                                opacity="0.85"
+                              />
+
+                              {/* Defaults (top) */}
+                              <path
+                                d={`${chartData.map((d, i) => {
+                                  const y1 = 100 - ((d.scheduledPrincipal + d.prepayments) / yAxisMax) * 100;
+                                  return i === 0 ? `M0,${y1}` : `L${i * 10},${y1}`;
+                                }).join(' ')} ${chartData.slice().reverse().map((d, i) => {
+                                  const y2 = 100 - (d.totalRunoff / yAxisMax) * 100;
+                                  return `L${(chartData.length - 1 - i) * 10},${y2}`;
+                                }).join(' ')} Z`}
+                                fill="#8B7355"
+                                opacity="0.8"
+                              />
+                            </svg>
+                          </div>
+
+                          <div className="ml-10 mr-2 flex justify-between text-[8px] text-slate-400 mt-1">
+                            <span>1</span>
+                            <span>{Math.floor(cashFlows.length / 2)}</span>
+                            <span>{cashFlows.length}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
-                {/* Stacked Area Chart */}
-                <div style={{ height: '240px' }}>
-                  {(() => {
-                    const cashFlows = waterfallResults.cashFlows;
-                    const step = cashFlows.length > 60 ? 3 : cashFlows.length > 36 ? 2 : 1;
-                    const chartData = cashFlows.filter((_, i) => i % step === 0 || i === cashFlows.length - 1).map(cf => ({
-                      month: cf.period,
-                      scheduledPrincipal: cf.scheduledPrincipal,
-                      prepayments: cf.prepayments,
-                      defaults: cf.defaults,
-                      losses: cf.losses,
-                      totalRunoff: cf.scheduledPrincipal + cf.prepayments + cf.defaults,
-                    }));
-
-                    const maxRunoff = Math.max(...chartData.map(d => d.totalRunoff));
-                    const yAxisMax = Math.ceil(maxRunoff * 1.1) || 1;
-
-                    return (
-                      <div className="relative h-full">
-                        {/* Y-axis labels */}
-                        <div className="absolute left-0 top-0 bottom-5 w-8 flex flex-col justify-between text-[8px] text-slate-400">
-                          <span>{yAxisMax.toFixed(1)}</span>
-                          <span>{(yAxisMax / 2).toFixed(1)}</span>
-                          <span>0</span>
-                        </div>
-
-                        {/* Chart area */}
-                        <div className="ml-10 mr-2 h-[calc(100%-20px)] relative border-l border-b border-slate-200">
-                          <svg viewBox={`0 0 ${chartData.length * 10} 100`} preserveAspectRatio="none" className="w-full h-full">
-                            {/* Subtle grid lines */}
-                            <line x1="0" y1="25" x2={chartData.length * 10} y2="25" stroke="#f1f5f9" strokeWidth="0.5" />
-                            <line x1="0" y1="50" x2={chartData.length * 10} y2="50" stroke="#f1f5f9" strokeWidth="0.5" />
-                            <line x1="0" y1="75" x2={chartData.length * 10} y2="75" stroke="#f1f5f9" strokeWidth="0.5" />
-
-                            {/* Scheduled Principal (bottom - muted navy) */}
-                            <path
-                              d={`M0,100 ${chartData.map((d, i) => `L${i * 10},${100 - (d.scheduledPrincipal / yAxisMax) * 100}`).join(' ')} L${(chartData.length - 1) * 10},100 Z`}
-                              fill="#3D5A73"
-                              opacity="0.85"
-                            />
-
-                            {/* Prepayments (middle - lighter slate-blue) */}
-                            <path
-                              d={`${chartData.map((d, i) => {
-                                const y1 = 100 - (d.scheduledPrincipal / yAxisMax) * 100;
-                                return i === 0 ? `M0,${y1}` : `L${i * 10},${y1}`;
-                              }).join(' ')} ${chartData.slice().reverse().map((d, i) => {
-                                const y2 = 100 - ((d.scheduledPrincipal + d.prepayments) / yAxisMax) * 100;
-                                return `L${(chartData.length - 1 - i) * 10},${y2}`;
-                              }).join(' ')} Z`}
-                              fill="#5B7A94"
-                              opacity="0.85"
-                            />
-
-                            {/* Defaults (top - muted bronze) */}
-                            <path
-                              d={`${chartData.map((d, i) => {
-                                const y1 = 100 - ((d.scheduledPrincipal + d.prepayments) / yAxisMax) * 100;
-                                return i === 0 ? `M0,${y1}` : `L${i * 10},${y1}`;
-                              }).join(' ')} ${chartData.slice().reverse().map((d, i) => {
-                                const y2 = 100 - (d.totalRunoff / yAxisMax) * 100;
-                                return `L${(chartData.length - 1 - i) * 10},${y2}`;
-                              }).join(' ')} Z`}
-                              fill="#8B7355"
-                              opacity="0.8"
-                            />
-
-                            {/* Net Losses line (muted red dashed) */}
-                            <path
-                              d={`M0,${100 - (chartData[0].losses / yAxisMax) * 100} ${chartData.slice(1).map((d, i) =>
-                                `L${(i + 1) * 10},${100 - (d.losses / yAxisMax) * 100}`
-                              ).join(' ')}`}
-                              fill="none"
-                              stroke="#8B4D4D"
-                              strokeWidth="1.5"
-                              strokeDasharray="3,2"
-                            />
-                          </svg>
-                        </div>
-
-                        {/* X-axis labels */}
-                        <div className="ml-10 mr-2 flex justify-between text-[8px] text-slate-400 mt-1">
-                          <span>1</span>
-                          <span>{Math.floor(cashFlows.length / 4)}</span>
-                          <span>{Math.floor(cashFlows.length / 2)}</span>
-                          <span>{Math.floor(cashFlows.length * 3 / 4)}</span>
-                          <span>{cashFlows.length}</span>
-                        </div>
+                {/* Interest Income */}
+                <div className="bg-white border border-slate-200 rounded p-5">
+                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-sm font-medium text-slate-700">Interest Income</h3>
+                      <p className="text-[9px] text-slate-400 mt-0.5">Monthly interest collections; loss overlay for excess-spread context ($M)</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-[9px]">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 bg-[#2D6A4F]" />
+                        <span className="text-slate-500">Interest</span>
                       </div>
-                    );
-                  })()}
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-px bg-[#8B4D4D]" style={{ borderTop: '1px dashed #8B4D4D' }} />
+                        <span className="text-slate-500">Loss (overlay)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ height: '200px' }}>
+                    {(() => {
+                      const cashFlows = waterfallResults.cashFlows;
+                      const step = cashFlows.length > 60 ? 3 : cashFlows.length > 36 ? 2 : 1;
+                      const chartData = cashFlows.filter((_, i) => i % step === 0 || i === cashFlows.length - 1).map(cf => ({
+                        month: cf.period,
+                        interest: cf.interestIncome,
+                        losses: cf.losses,
+                      }));
+
+                      const maxInterest = Math.max(...chartData.map(d => d.interest));
+                      const yAxisMax = Math.ceil(maxInterest * 1.1) || 1;
+
+                      return (
+                        <div className="relative h-full">
+                          <div className="absolute left-0 top-0 bottom-5 w-8 flex flex-col justify-between text-[8px] text-slate-400">
+                            <span>{yAxisMax.toFixed(1)}</span>
+                            <span>{(yAxisMax / 2).toFixed(1)}</span>
+                            <span>0</span>
+                          </div>
+
+                          <div className="ml-10 mr-2 h-[calc(100%-20px)] relative border-l border-b border-slate-200">
+                            <svg viewBox={`0 0 ${chartData.length * 10} 100`} preserveAspectRatio="none" className="w-full h-full">
+                              <line x1="0" y1="25" x2={chartData.length * 10} y2="25" stroke="#f1f5f9" strokeWidth="0.5" />
+                              <line x1="0" y1="50" x2={chartData.length * 10} y2="50" stroke="#f1f5f9" strokeWidth="0.5" />
+                              <line x1="0" y1="75" x2={chartData.length * 10} y2="75" stroke="#f1f5f9" strokeWidth="0.5" />
+
+                              {/* Interest Income area (muted green) */}
+                              <path
+                                d={`M0,100 ${chartData.map((d, i) => `L${i * 10},${100 - (d.interest / yAxisMax) * 100}`).join(' ')} L${(chartData.length - 1) * 10},100 Z`}
+                                fill="#2D6A4F"
+                                opacity="0.7"
+                              />
+
+                              {/* Net Losses line (muted red dashed) for context */}
+                              <path
+                                d={`M0,${100 - (chartData[0].losses / yAxisMax) * 100} ${chartData.slice(1).map((d, i) =>
+                                  `L${(i + 1) * 10},${100 - (d.losses / yAxisMax) * 100}`
+                                ).join(' ')}`}
+                                fill="none"
+                                stroke="#8B4D4D"
+                                strokeWidth="1.5"
+                                strokeDasharray="3,2"
+                              />
+                            </svg>
+                          </div>
+
+                          <div className="ml-10 mr-2 flex justify-between text-[8px] text-slate-400 mt-1">
+                            <span>1</span>
+                            <span>{Math.floor(cashFlows.length / 2)}</span>
+                            <span>{cashFlows.length}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
 

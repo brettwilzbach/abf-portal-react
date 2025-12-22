@@ -17,8 +17,8 @@ export const TEMPLATE_DEFAULTS: Record<string, TemplateDefaults> = {
     tranchePricesPct: [100, 100, 100, 100, 99],
   },
   'equipment': {
-    equitySharePct: 46,
-    tranchePricesPct: [100, 100, 100, 100, 100],
+    equitySharePct: 100,
+    tranchePricesPct: [100, 100, 100, 80], // A, B, C, Equity
   },
   'clo': {
     equitySharePct: 100,

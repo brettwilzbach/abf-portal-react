@@ -216,8 +216,30 @@ export function calculateWaterfall(
     const interestShortfall = trancheInterestShortfall[idx];
     const principalLoss = Math.max(0, tranche.balance - principalReceived - finalBalance);
 
-    const avgPeriod = cashFlows.length > 0 ? (cashFlows.length / 2) : 1;
-    const wal = principalReceived > 0 ? (avgPeriod / 12) : 0;
+    // Calculate WAL: weighted average time to principal receipt
+    // WAL = Σ(principal_t × t) / Σ(principal_t), where t is in years
+    // Since we track total cash flows (interest + principal), we need to estimate
+    // For now, use a simple approximation based on when the tranche pays down
+    let walNumerator = 0;
+    let walDenominator = 0;
+    let runningBalance = tranche.balance;
+
+    for (let p = 0; p < trancheCashFlows[idx].length; p++) {
+      const cf = trancheCashFlows[idx][p];
+      // Estimate principal portion (cash flow minus estimated interest)
+      const couponRate = tranche.rating === 'NR' ? 0 : (sofrRate + tranche.spread / 100) / 100 / 12;
+      const estInterest = runningBalance * couponRate;
+      const estPrincipal = Math.max(0, cf - estInterest);
+
+      if (estPrincipal > 0) {
+        const periodYears = (p + 1) / 12;
+        walNumerator += estPrincipal * periodYears;
+        walDenominator += estPrincipal;
+        runningBalance = Math.max(0, runningBalance - estPrincipal);
+      }
+    }
+
+    const wal = walDenominator > 0 ? walNumerator / walDenominator : 0;
 
     const totalCashReceived = principalReceived + interestReceived;
     const pricePct = tranchePricesPct?.[idx] ?? 100;

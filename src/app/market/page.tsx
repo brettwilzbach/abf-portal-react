@@ -13,6 +13,43 @@ import { NotePad } from '@/components/ui/notepad';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+
+// Spread data for ABS/CLO sectors
+interface SpreadData {
+  sector: string;
+  currentSpread: number;
+  benchmark: string;
+  ytdChange: number;
+  zScore: number;
+  oneYearAvg: number;
+  oneYearMin: number;
+  oneYearMax: number;
+}
+
+const SPREAD_DATA: SpreadData[] = [
+  { sector: 'CLO AAA', currentSpread: 140, benchmark: 'SOFR', ytdChange: -15, zScore: 0.8, oneYearAvg: 155, oneYearMin: 125, oneYearMax: 185 },
+  { sector: 'CLO AA', currentSpread: 185, benchmark: 'SOFR', ytdChange: -20, zScore: 0.6, oneYearAvg: 200, oneYearMin: 165, oneYearMax: 250 },
+  { sector: 'CLO BBB', currentSpread: 380, benchmark: 'SOFR', ytdChange: -35, zScore: 0.3, oneYearAvg: 410, oneYearMin: 340, oneYearMax: 500 },
+  { sector: 'CLO BB', currentSpread: 750, benchmark: 'SOFR', ytdChange: -50, zScore: 0.5, oneYearAvg: 800, oneYearMin: 680, oneYearMax: 950 },
+  { sector: 'Prime Auto AAA', currentSpread: 55, benchmark: 'Treasuries', ytdChange: -8, zScore: -0.2, oneYearAvg: 52, oneYearMin: 40, oneYearMax: 70 },
+  { sector: 'Subprime Auto AAA', currentSpread: 95, benchmark: 'Treasuries', ytdChange: -12, zScore: 0.1, oneYearAvg: 93, oneYearMin: 75, oneYearMax: 120 },
+  { sector: 'Consumer ABS AAA', currentSpread: 65, benchmark: 'Treasuries', ytdChange: -5, zScore: -0.1, oneYearAvg: 63, oneYearMin: 50, oneYearMax: 85 },
+  { sector: 'Equipment ABS AAA', currentSpread: 75, benchmark: 'Treasuries', ytdChange: -10, zScore: 0.2, oneYearAvg: 78, oneYearMin: 60, oneYearMax: 100 },
+];
+
+function getZScoreColor(zScore: number): string {
+  if (zScore > 0.5) return 'bg-green-500 text-white';
+  if (zScore > 0) return 'bg-green-100 text-green-800';
+  if (zScore > -0.5) return 'bg-yellow-100 text-yellow-800';
+  return 'bg-red-100 text-red-800';
+}
+
+function getZScoreLabel(zScore: number): string {
+  if (zScore > 0.5) return 'Attractive';
+  if (zScore > 0) return 'Fair';
+  if (zScore > -0.5) return 'Neutral';
+  return 'Rich';
+}
 import {
   Select,
   SelectContent,
@@ -321,6 +358,48 @@ export default function MarketTrackerPage() {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Spread Data Section */}
+      <Card className="mt-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Sector Spreads</CardTitle>
+          <p className="text-sm text-gray-500">Current spread levels across ABS and CLO sectors</p>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Sector</TableHead>
+                <TableHead className="text-right">Spread</TableHead>
+                <TableHead>Benchmark</TableHead>
+                <TableHead className="text-right">YTD Chg</TableHead>
+                <TableHead className="text-right">1Y Range</TableHead>
+                <TableHead>Value</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {SPREAD_DATA.map((spread) => (
+                <TableRow key={spread.sector}>
+                  <TableCell className="font-medium">{spread.sector}</TableCell>
+                  <TableCell className="text-right font-mono">+{spread.currentSpread}bps</TableCell>
+                  <TableCell className="text-gray-500 text-sm">{spread.benchmark}</TableCell>
+                  <TableCell className={`text-right ${spread.ytdChange < 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {spread.ytdChange >= 0 ? '+' : ''}{spread.ytdChange}bps
+                  </TableCell>
+                  <TableCell className="text-right text-gray-500 text-sm">
+                    {spread.oneYearMin} - {spread.oneYearMax}
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={getZScoreColor(spread.zScore)}>
+                      {getZScoreLabel(spread.zScore)}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 

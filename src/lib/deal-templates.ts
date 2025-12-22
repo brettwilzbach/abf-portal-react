@@ -26,9 +26,8 @@ export const DEAL_TEMPLATES: Record<string, DealTemplate> = {
       { name: 'Residual', balance: 15, couponType: 'Fixed', spread: 0, rating: 'NR', subordination: 0 },
     ],
     triggers: [
-      // OC = 300/285 = 105.3% at start; threshold eased to pass base case
-      { name: 'OC Test', type: 'OC', threshold: 103, consequence: 'Sequential pay; cash trapped' },
-      { name: 'CNL Trigger', type: 'CNL', threshold: 15, consequence: 'Accelerated amortization' },
+      { name: 'OC Test', type: 'OC', threshold: 104, consequence: 'Sequential pay + cash trapping' },
+      { name: 'CNL Trigger', type: 'CNL', threshold: 15, consequence: 'Sequential pay + accelerated amortization' },
       { name: 'ARD', type: 'ARD', threshold: 36, consequence: 'Excess cash diverts to senior paydown' },
     ],
     keyRisks: ['Default rates', 'Depreciation risk', 'Economic sensitivity', 'Prepayment risk'],
@@ -56,9 +55,7 @@ export const DEAL_TEMPLATES: Record<string, DealTemplate> = {
       { name: 'Equity', balance: 50, couponType: 'Fixed', spread: 0, rating: 'NR', subordination: 0 },
     ],
     triggers: [
-      // OC = 500/450 = 111.1% at start; CLOs use OC/IC tests (not CNL)
-      { name: 'OC Test', type: 'OC', threshold: 108, consequence: 'Interest diversion to senior' },
-      // Non-call period (not turbo ARD)
+      { name: 'OC Test', type: 'OC', threshold: 104, consequence: 'Sequential pay + cash trapping' },
       { name: 'Non-Call End', type: 'INFO', threshold: 24, consequence: 'Deal callable; optional redemption (informational only)' },
     ],
     keyRisks: ['Corporate credit risk', 'Reinvestment risk', 'Manager selection', 'CCC bucket'],
@@ -85,9 +82,8 @@ export const DEAL_TEMPLATES: Record<string, DealTemplate> = {
       { name: 'Residual', balance: 15, couponType: 'Fixed', spread: 0, rating: 'NR', subordination: 0 },
     ],
     triggers: [
-      // OC = 250/235 = 106.4% at start; threshold eased to pass base case
-      { name: 'OC Test', type: 'OC', threshold: 104, consequence: 'Sequential pay; cash trapped' },
-      { name: 'CNL Trigger', type: 'CNL', threshold: 12, consequence: 'Accelerated amortization' },
+      { name: 'OC Test', type: 'OC', threshold: 104, consequence: 'Sequential pay + cash trapping' },
+      { name: 'CNL Trigger', type: 'CNL', threshold: 12, consequence: 'Sequential pay + accelerated amortization' },
       { name: 'ARD', type: 'ARD', threshold: 24, consequence: 'Excess cash diverts to senior paydown' },
     ],
     keyRisks: ['No collateral recovery', 'Regulatory changes', 'Consumer behavior', 'Charge-off timing'],
@@ -99,31 +95,28 @@ export const DEAL_TEMPLATES: Record<string, DealTemplate> = {
   'equipment': {
     id: 'equipment',
     name: 'Equipment ABS',
-    description: 'Loans/leases for business equipment',
+    description: 'Loans/leases for business equipment (railcar, aircraft, construction)',
     collateralType: 'Commercial Equipment',
-    collateralBalance: 310, // Increased to provide OC cushion
-    wac: 10.5, // Increased from 8% to provide ~400bps excess spread over liability costs
+    collateralBalance: 300,
+    wac: 8.5, // Equipment leases typically lower yield than consumer
     wam: 48,
     typicalWAL: '2.5-4.0 years',
     tranches: [
-      // Equipment ABS typically has lower subordination due to collateral value
-      // Added reserve/equity to ensure OC test passes in base case
-      { name: 'Class A-1', balance: 145, couponType: 'Floating', spread: 55, rating: 'AAA', subordination: 20.0 },
-      { name: 'Class A-2', balance: 95, couponType: 'Floating', spread: 70, rating: 'AAA', subordination: 20.0 },
-      { name: 'Class B', balance: 30, couponType: 'Floating', spread: 115, rating: 'AA', subordination: 10.3 },
-      { name: 'Class C', balance: 20, couponType: 'Floating', spread: 165, rating: 'A', subordination: 3.5 },
-      { name: 'Reserve', balance: 10, couponType: 'Fixed', spread: 0, rating: 'NR', subordination: 0 },
+      // 4-tranche structure: A, B, C, Equity
+      { name: 'Class A', balance: 240, couponType: 'Floating', spread: 65, rating: 'AAA', subordination: 20.0 },
+      { name: 'Class B', balance: 30, couponType: 'Floating', spread: 150, rating: 'A', subordination: 10.0 },
+      { name: 'Class C', balance: 15, couponType: 'Floating', spread: 275, rating: 'BBB', subordination: 5.0 },
+      { name: 'Equity', balance: 15, couponType: 'Fixed', spread: 0, rating: 'NR', subordination: 0 },
     ],
     triggers: [
-      // OC = 310/290 = 106.9% at start
-      { name: 'OC Test', type: 'OC', threshold: 104, consequence: 'Sequential pay; cash trapped' },
-      { name: 'CNL Trigger', type: 'CNL', threshold: 10, consequence: 'Accelerated amortization' },
-      { name: 'ARD', type: 'ARD', threshold: 36, consequence: 'Excess cash diverts to senior paydown' },
+      { name: 'OC Test', type: 'OC', threshold: 104, consequence: 'Sequential pay + cash trapping' },
+      { name: 'CNL Trigger', type: 'CNL', threshold: 5, consequence: 'Sequential pay + accelerated amortization' },
+      { name: 'ARD', type: 'ARD', threshold: 48, consequence: 'Excess cash diverts to senior paydown' },
     ],
     keyRisks: ['Residual value risk', 'Obligor concentration', 'Equipment obsolescence', 'Technology risk'],
     typicalSpreads: [
       { rating: 'AAA', spread: '50-80 bps' },
-      { rating: 'A', spread: '140-185 bps' },
+      { rating: 'A', spread: '120-175 bps' },
     ],
   },
 };

@@ -45,10 +45,7 @@ import type {
   DealTemplate,
   ScenarioResult,
 } from '@/types/waterfall';
-import {
-  calculateWaterfall,
-  calculateBreakevenCDR,
-} from '@/lib/waterfall-engine';
+import { calculateWaterfall } from '@/lib/waterfall-engine';
 import { SCENARIO_PRESETS } from '@/lib/scenario-presets';
 import {
   DEFAULT_SERVICING_FEE_BPS,
@@ -246,23 +243,6 @@ export default function DealModelerPage() {
       tranchePricesPct
     );
   }, [template, cpr, cdr, severity, months, effectiveSofr, excessSpreadBps, servicingFeeBps, otherFeesBps, tranchePricesPct]);
-
-  // Breakeven CDR for equity (last tranche) - CDR at which equity first takes loss
-  const equityBreakevenCDR = useMemo(() => {
-    const effectiveRecovery = 100 - severity;
-    const equityIdx = template.tranches.length - 1; // Equity is last
-    return calculateBreakevenCDR(
-      template,
-      cpr,
-      effectiveRecovery,
-      months,
-      equityIdx,
-      servicingFeeBps,
-      otherFeesBps,
-      equitySharePct,
-      tranchePricesPct
-    );
-  }, [template, cpr, severity, months, servicingFeeBps, otherFeesBps, tranchePricesPct]);
 
   // Scenario results - now fully driven by waterfall model for accuracy
   const scenarioResults = useMemo(() => {
@@ -1208,40 +1188,55 @@ export default function DealModelerPage() {
               </button>
 
               {showAdvancedSettings && (
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm pt-2 border-t border-slate-200">
-                  <div className="bg-white rounded-lg p-2 border border-slate-200">
-                    <p className="text-[10px] text-gray-500 mb-0.5">Projection</p>
-                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{months} mo</p>
+                <div className="space-y-3 pt-2 border-t border-slate-200">
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
+                    <div className="bg-white rounded-lg p-2 border border-slate-200">
+                      <p className="text-[10px] text-gray-500 mb-0.5">Projection</p>
+                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{months} mo</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 border border-slate-200">
+                      <p className="text-[10px] text-gray-500 mb-0.5">SOFR</p>
+                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{effectiveSofr.toFixed(2)}%</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 border border-slate-200">
+                      <p className="text-[10px] text-gray-500 mb-0.5">WAC</p>
+                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{template.wac.toFixed(1)}%</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 border border-slate-200">
+                      <p className="text-[10px] text-gray-500 mb-0.5">Servicing Fee</p>
+                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{servicingFeeBps} bps</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 border border-slate-200">
+                      <p className="text-[10px] text-gray-500 mb-0.5">Avg Price</p>
+                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">
+                        {(() => {
+                          const total = template.tranches.reduce((sum, t) => sum + t.balance, 0);
+                          const weighted = template.tranches.reduce(
+                            (sum, t, idx) => sum + t.balance * (tranchePricesPct[idx] ?? 100),
+                            0
+                          );
+                          const avg = total > 0 ? weighted / total : 100;
+                          return `${avg.toFixed(1)}%`;
+                        })()}
+                      </p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 border border-slate-200">
+                      <p className="text-[10px] text-gray-500 mb-0.5">Collateral</p>
+                      <p className="font-mono text-sm font-semibold text-[#1E3A5F]">${template.collateralBalance}M</p>
+                    </div>
                   </div>
-                  <div className="bg-white rounded-lg p-2 border border-slate-200">
-                    <p className="text-[10px] text-gray-500 mb-0.5">SOFR</p>
-                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{effectiveSofr.toFixed(2)}%</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-2 border border-slate-200">
-                    <p className="text-[10px] text-gray-500 mb-0.5">WAC</p>
-                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{template.wac.toFixed(1)}%</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-2 border border-slate-200">
-                    <p className="text-[10px] text-gray-500 mb-0.5">Servicing Fee</p>
-                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">{servicingFeeBps} bps</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-2 border border-slate-200">
-                    <p className="text-[10px] text-gray-500 mb-0.5">Avg Price</p>
-                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">
-                      {(() => {
-                        const total = template.tranches.reduce((sum, t) => sum + t.balance, 0);
-                        const weighted = template.tranches.reduce(
-                          (sum, t, idx) => sum + t.balance * (tranchePricesPct[idx] ?? 100),
-                          0
-                        );
-                        const avg = total > 0 ? weighted / total : 100;
-                        return `${avg.toFixed(1)}%`;
-                      })()}
-                    </p>
-                  </div>
-                  <div className="bg-white rounded-lg p-2 border border-slate-200">
-                    <p className="text-[10px] text-gray-500 mb-0.5">Collateral</p>
-                    <p className="font-mono text-sm font-semibold text-[#1E3A5F]">${template.collateralBalance}M</p>
+                  {/* Deal Triggers - Compact view in advanced settings */}
+                  <div className="text-xs text-gray-500">
+                    <span className="font-medium">Triggers:</span>{' '}
+                    {template.triggers.map((t, idx) => {
+                      let display = '';
+                      if (t.type === 'OC') display = `OC ≥ ${t.threshold}%`;
+                      else if (t.type === 'CNL') display = `CNL > ${t.threshold}%`;
+                      else if (t.type === 'ARD') display = `ARD M${t.threshold}`;
+                      else if (t.type === 'INFO') display = `${t.name} M${t.threshold}`;
+                      return display;
+                    }).filter(Boolean).join(' | ')}
+                    <span className="text-gray-400 ml-1">(see Structural Protections below)</span>
                   </div>
                 </div>
               )}
@@ -1251,24 +1246,57 @@ export default function DealModelerPage() {
           {/* Results Summary */}
           {waterfallResults && (
             <div className="space-y-6">
+              {/* Structural Protections - Prominent Trigger Display */}
+              <Card className="border-amber-200 bg-amber-50/30">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    Structural Protections
+                  </CardTitle>
+                  <CardDescription>
+                    Built-in safeguards that protect senior tranches when performance deteriorates
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="bg-white rounded-lg p-4 border border-amber-200">
+                    <div className="space-y-4">
+                      {template.triggers.map((trigger) => (
+                        <div key={trigger.name} className="border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-semibold text-gray-800">{trigger.name}</span>
+                            <span className="font-mono font-semibold text-[#1E3A5F]">
+                              {trigger.type === 'OC' && `OC must stay ≥ ${trigger.threshold}%`}
+                              {trigger.type === 'CNL' && `Breach if CNL > ${trigger.threshold}%`}
+                              {trigger.type === 'ARD' && `Month ${trigger.threshold}`}
+                              {trigger.type === 'INFO' && `Month ${trigger.threshold}`}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500">{trigger.consequence}</p>
+                        </div>
+                      ))}
+                      {template.triggers.length === 0 && (
+                        <p className="text-xs text-gray-400 italic">No triggers defined for this structure</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Current Status */}
+                  <div className="mt-4 pt-3 border-t border-amber-200 flex items-center gap-4 text-sm">
+                    <span className="text-gray-600">Current Status:</span>
+                    {breachMonths === 0 ? (
+                      <Badge className="bg-green-100 text-green-800">All Triggers Passing</Badge>
+                    ) : (
+                      <Badge className="bg-red-100 text-red-800">
+                        {breachMonths} Month{breachMonths > 1 ? 's' : ''} with Breach
+                        {firstBreachMonth && ` (first: M${firstBreachMonth})`}
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                <Card className="bg-[#1E3A5F]/5 border-[#1E3A5F]/20">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-[#1E3A5F] font-medium flex items-center">
-                      Equity Breakeven CDR
-                      <Tip text="CDR at which equity first takes principal loss. Higher = more cushion." />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold text-[#1E3A5F]">
-                      {equityBreakevenCDR === null ? '>50%' : `${equityBreakevenCDR.toFixed(1)}%`}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Current: {cdr}% CDR
-                    </p>
-                  </CardContent>
-                </Card>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm text-gray-500 flex items-center">
@@ -1362,173 +1390,6 @@ export default function DealModelerPage() {
                 )}
               </div>
 
-              {/* OC & CNL Time Series Chart */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">OC Ratio & CNL Time Series</CardTitle>
-                  <CardDescription>
-                    Track trigger metrics over deal life. Red zones indicate breaches.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {(() => {
-                    const ocTrigger = template.triggers.find((t) => t.type === 'OC');
-                    const cnlTrigger = template.triggers.find((t) => t.type === 'CNL');
-                    const ocThreshold = ocTrigger?.threshold || 100;
-                    const cnlThreshold = cnlTrigger?.threshold || 100;
-                    const maxOC = Math.max(...waterfallResults.cashFlows.map((cf) => cf.ocPercent), ocThreshold + 10);
-                    const maxCNL = Math.max(...waterfallResults.cashFlows.map((cf) => cf.cnlPercent), cnlThreshold + 5);
-
-                    // Sample every Nth point for readability (max 24 points)
-                    const sampleRate = Math.max(1, Math.floor(waterfallResults.cashFlows.length / 24));
-                    const sampledFlows = waterfallResults.cashFlows.filter((_, i) => i % sampleRate === 0 || i === waterfallResults.cashFlows.length - 1);
-
-                    return (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* OC Ratio Chart */}
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-sm font-medium text-gray-700">OC Ratio</span>
-                            <span className="text-xs text-gray-500">Threshold: {ocThreshold}%</span>
-                          </div>
-                          <div className="relative h-40 bg-gray-50 rounded border">
-                            {/* Threshold line */}
-                            <div
-                              className="absolute left-0 right-0 border-t-2 border-dashed border-red-400"
-                              style={{ bottom: `${((ocThreshold - 90) / (maxOC - 90)) * 100}%` }}
-                            />
-                            {/* Breach zone */}
-                            <div
-                              className="absolute left-0 right-0 bottom-0 bg-red-100/50"
-                              style={{ height: `${((ocThreshold - 90) / (maxOC - 90)) * 100}%` }}
-                            />
-                            {/* OC line */}
-                            <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
-                              <polyline
-                                fill="none"
-                                stroke="#1E3A5F"
-                                strokeWidth="2"
-                                points={sampledFlows.map((cf, i) => {
-                                  const x = (i / (sampledFlows.length - 1)) * 100;
-                                  const y = 100 - ((cf.ocPercent - 90) / (maxOC - 90)) * 100;
-                                  return `${x}%,${y}%`;
-                                }).join(' ')}
-                              />
-                              {/* Breach markers */}
-                              {sampledFlows.map((cf, i) => {
-                                if (cf.triggerStatus === 'Fail' && cf.ocPercent < ocThreshold) {
-                                  const x = (i / (sampledFlows.length - 1)) * 100;
-                                  const y = 100 - ((cf.ocPercent - 90) / (maxOC - 90)) * 100;
-                                  return (
-                                    <circle
-                                      key={i}
-                                      cx={`${x}%`}
-                                      cy={`${y}%`}
-                                      r="4"
-                                      fill="#DC2626"
-                                    />
-                                  );
-                                }
-                                return null;
-                              })}
-                            </svg>
-                            {/* Y-axis labels */}
-                            <div className="absolute -left-1 top-0 text-xs text-gray-400">{maxOC.toFixed(0)}%</div>
-                            <div className="absolute -left-1 bottom-0 text-xs text-gray-400">90%</div>
-                          </div>
-                          <div className="flex justify-between text-xs text-gray-400 mt-1">
-                            <span>M1</span>
-                            <span>M{waterfallResults.cashFlows.length}</span>
-                          </div>
-                        </div>
-
-                        {/* CNL Chart */}
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-sm font-medium text-gray-700">Cumulative Net Loss</span>
-                            <span className="text-xs text-gray-500">
-                              {cnlTrigger ? `Threshold: ${cnlThreshold}%` : 'No CNL trigger'}
-                            </span>
-                          </div>
-                          <div className="relative h-40 bg-gray-50 rounded border">
-                            {/* Threshold line (if exists) */}
-                            {cnlTrigger && (
-                              <>
-                                <div
-                                  className="absolute left-0 right-0 border-t-2 border-dashed border-red-400"
-                                  style={{ bottom: `${100 - (cnlThreshold / maxCNL) * 100}%` }}
-                                />
-                                {/* Breach zone */}
-                                <div
-                                  className="absolute left-0 right-0 top-0 bg-red-100/50"
-                                  style={{ height: `${(cnlThreshold / maxCNL) * 100}%` }}
-                                />
-                              </>
-                            )}
-                            {/* CNL line */}
-                            <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
-                              <polyline
-                                fill="none"
-                                stroke="#E65100"
-                                strokeWidth="2"
-                                points={sampledFlows.map((cf, i) => {
-                                  const x = (i / (sampledFlows.length - 1)) * 100;
-                                  const y = 100 - (cf.cnlPercent / maxCNL) * 100;
-                                  return `${x}%,${y}%`;
-                                }).join(' ')}
-                              />
-                              {/* Breach markers */}
-                              {cnlTrigger && sampledFlows.map((cf, i) => {
-                                if (cf.cnlPercent > cnlThreshold) {
-                                  const x = (i / (sampledFlows.length - 1)) * 100;
-                                  const y = 100 - (cf.cnlPercent / maxCNL) * 100;
-                                  return (
-                                    <circle
-                                      key={i}
-                                      cx={`${x}%`}
-                                      cy={`${y}%`}
-                                      r="4"
-                                      fill="#DC2626"
-                                    />
-                                  );
-                                }
-                                return null;
-                              })}
-                            </svg>
-                            {/* Y-axis labels */}
-                            <div className="absolute -left-1 top-0 text-xs text-gray-400">{maxCNL.toFixed(0)}%</div>
-                            <div className="absolute -left-1 bottom-0 text-xs text-gray-400">0%</div>
-                          </div>
-                          <div className="flex justify-between text-xs text-gray-400 mt-1">
-                            <span>M1</span>
-                            <span>M{waterfallResults.cashFlows.length}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {/* Legend */}
-                  <div className="flex gap-4 mt-4 pt-4 border-t text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-0.5 bg-[#1E3A5F]" />
-                      <span className="text-gray-600">OC Ratio</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-0.5 bg-[#E65100]" />
-                      <span className="text-gray-600">CNL</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-red-600" />
-                      <span className="text-gray-600">Breach</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-3 bg-red-100 border border-red-200" />
-                      <span className="text-gray-600">Breach Zone</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Bond Returns by Tranche - HERO SECTION */}
               <Card className="border-2 border-[#1E3A5F] shadow-lg overflow-hidden">
                 <div className="bg-gradient-to-r from-[#1C2156] to-[#1E3A5F] text-white px-6 py-4">
@@ -1539,7 +1400,7 @@ export default function DealModelerPage() {
                       </div>
                       <div>
                         <h2 className="text-xl font-bold tracking-tight">Bond Returns by Tranche</h2>
-                        <p className="text-white/80 text-sm">CF IRR, MOIC, and WAL based on modeled cash flows</p>
+                        <p className="text-white/80 text-sm">IRR calculated from cash flows at input prices</p>
                       </div>
                     </div>
                     <div className="hidden md:flex items-center gap-4 text-sm">
@@ -1566,52 +1427,48 @@ export default function DealModelerPage() {
                       <TableRow>
                         <TableHead>Tranche</TableHead>
                         <TableHead>Rating</TableHead>
+                        <TableHead className="text-right" title="Purchase price ($M) - affects IRR/MOIC">Price</TableHead>
                         <TableHead className="text-right">Original</TableHead>
-                        <TableHead className="text-right">Final</TableHead>
-                        <TableHead className="text-right" title="Interest paid (senior-first, capped by available)">Interest</TableHead>
+                        <TableHead className="text-right" title="Interest received from waterfall">Interest</TableHead>
                         <TableHead className="text-right" title="Cumulative interest shortfall (unpaid coupons)">Int. S/F</TableHead>
-                        <TableHead className="text-right" title="Principal received (pro-rata or sequential)">Principal</TableHead>
-                        <TableHead className="text-right" title="Principal not recovered">Prin. Loss</TableHead>
-                        <TableHead className="text-right" title="(Principal + Interest) / Purchase Price. Fees excluded.">MOIC</TableHead>
-                        <TableHead className="text-right bg-[#1E3A5F]/10 font-bold" title="Cash-flow IRR: annualized return based on modeled cash flows (at par).">CF IRR</TableHead>
-                        <TableHead className="text-right" title="Approximate WAL from modeled principal timing.">WAL</TableHead>
+                        <TableHead className="text-right" title="Principal received from waterfall">Principal</TableHead>
+                        <TableHead className="text-right" title="Principal not recovered">Loss</TableHead>
+                        <TableHead className="text-right" title="(Principal + Interest) / Purchase Price">MOIC</TableHead>
+                        <TableHead className="text-right bg-[#1E3A5F]/10 font-bold" title="Cash-flow IRR: annualized return based on modeled cash flows at purchase price">CF IRR</TableHead>
+                        <TableHead className="text-right" title="Weighted average life from principal timing">WAL</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {waterfallResults.trancheSummary.map((ts) => (
-                        <TableRow key={ts.name}>
-                          <TableCell className="font-medium">{ts.name}</TableCell>
-                          <TableCell>
-                            <Badge className={getRatingColorClass(ts.rating)}>{ts.rating}</Badge>
-                          </TableCell>
-                          <TableCell className="text-right">${ts.originalBalance.toFixed(1)}M</TableCell>
-                          <TableCell className="text-right">${ts.finalBalance.toFixed(1)}M</TableCell>
-                          <TableCell className="text-right">${ts.totalInterest.toFixed(1)}M</TableCell>
-                          <TableCell
-                            className={`text-right ${ts.interestShortfall > 0.01 ? 'text-amber-600' : ''}`}
-                            title="Cumulative interest shortfall (unpaid coupons)"
-                          >
-                            {ts.interestShortfall > 0.01 ? `$${ts.interestShortfall.toFixed(1)}M` : '--'}
-                          </TableCell>
-                          <TableCell className="text-right">${ts.totalPrincipal.toFixed(1)}M</TableCell>
-                          <TableCell
-                            className={`text-right ${ts.principalLoss > 0 ? 'text-red-600' : ''}`}
-                          >
-                            ${ts.principalLoss.toFixed(1)}M
-                          </TableCell>
-                          <TableCell
-                            className={`text-right font-semibold ${
-                              ts.moic >= 1 ? 'text-green-600' : 'text-red-600'
-                            }`}
-                          >
-                            {ts.moic.toFixed(2)}x
-                          </TableCell>
-                          <TableCell className="text-right bg-[#1E3A5F]/5 font-bold text-[#1E3A5F]">
-                            {ts.irr == null ? '--' : `${(ts.irr * 100).toFixed(1)}%`}
-                          </TableCell>
-                          <TableCell className="text-right">{ts.wal.toFixed(1)}yr</TableCell>
-                        </TableRow>
-                      ))}
+                      {waterfallResults.trancheSummary.map((ts, idx) => {
+                        const lossPercent = ts.originalBalance > 0 ? (ts.principalLoss / ts.originalBalance) * 100 : 0;
+                        return (
+                          <TableRow key={ts.name}>
+                            <TableCell className="font-medium">{ts.name}</TableCell>
+                            <TableCell>
+                              <Badge className={getRatingColorClass(ts.rating)}>{ts.rating}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm">
+                              ${((tranchePricesPct[idx] ?? 100) / 100 * ts.originalBalance).toFixed(1)}M
+                            </TableCell>
+                            <TableCell className="text-right">${ts.originalBalance.toFixed(1)}M</TableCell>
+                            <TableCell className="text-right">${ts.totalInterest.toFixed(1)}M</TableCell>
+                            <TableCell className={`text-right ${ts.interestShortfall > 0.01 ? 'text-amber-600 font-medium' : ''}`}>
+                              {ts.interestShortfall > 0.01 ? `$${ts.interestShortfall.toFixed(1)}M` : '--'}
+                            </TableCell>
+                            <TableCell className="text-right">${ts.totalPrincipal.toFixed(1)}M</TableCell>
+                            <TableCell className={`text-right ${lossPercent > 0 ? 'text-red-600 font-medium' : ''}`}>
+                              {lossPercent > 0 ? `${lossPercent.toFixed(0)}%` : '--'}
+                            </TableCell>
+                            <TableCell className={`text-right font-semibold ${ts.moic >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+                              {ts.moic.toFixed(2)}x
+                            </TableCell>
+                            <TableCell className="text-right bg-[#1E3A5F]/5 font-bold text-[#1E3A5F]">
+                              {ts.irr == null ? '--' : `${(ts.irr * 100).toFixed(1)}%`}
+                            </TableCell>
+                            <TableCell className="text-right">{ts.wal.toFixed(1)}yr</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -1622,10 +1479,10 @@ export default function DealModelerPage() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center">
                     Loss Allocation by Tranche
-                    <Tip text="Reverse waterfall: losses hit junior tranches first before reaching seniors." />
+                    <Tip text="Losses hit junior tranches first before reaching seniors." />
                   </CardTitle>
                   <CardDescription>
-                    Visual breakdown of how losses cascade through the capital structure
+                    Capital structure with loss allocation (senior at top, equity at bottom)
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1634,62 +1491,42 @@ export default function DealModelerPage() {
                     const totalOriginal = waterfallResults.trancheSummary.reduce((sum, ts) => sum + ts.originalBalance, 0);
                     const lossPercent = (totalLoss / totalOriginal) * 100;
 
-                    // Calculate loss allocation (losses hit junior tranches first)
-                    const reversedTranches = [...waterfallResults.trancheSummary].reverse();
+                    // Senior at top, equity at bottom (original order)
+                    const tranches = waterfallResults.trancheSummary;
 
                     return (
-                      <div className="space-y-4">
-                        {/* Total Loss Summary */}
-                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <span className="text-sm text-gray-600">Total Principal Loss</span>
-                            <p className="text-lg font-bold text-red-600">${totalLoss.toFixed(1)}M</p>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-sm text-gray-600">% of Deal</span>
-                            <p className="text-lg font-bold text-red-600">{lossPercent.toFixed(1)}%</p>
-                          </div>
-                        </div>
-
-                        {/* Stacked Bar Visualization */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs text-gray-500 mb-1">
-                            <span>Loss Allocation (Junior to Senior)</span>
-                            <span>Total: ${totalOriginal.toFixed(0)}M</span>
-                          </div>
-
-                          {/* Full stack bar */}
-                          <div className="relative h-12 rounded overflow-hidden flex">
-                            {reversedTranches.map((ts, idx) => {
-                              const widthPercent = (ts.originalBalance / totalOriginal) * 100;
-                              const lossInTranche = ts.principalLoss;
-                              const lossRatio = lossInTranche / ts.originalBalance;
+                      <div className="flex gap-6">
+                        {/* Vertical Stacked Bar */}
+                        <div className="flex flex-col w-32">
+                          <div className="text-xs text-gray-500 mb-2 text-center">Capital Structure</div>
+                          <div className="flex flex-col rounded overflow-hidden border border-gray-200" style={{ height: '280px' }}>
+                            {tranches.map((ts) => {
+                              const heightPercent = (ts.originalBalance / totalOriginal) * 100;
+                              const lossRatio = ts.originalBalance > 0 ? ts.principalLoss / ts.originalBalance : 0;
 
                               return (
                                 <div
                                   key={ts.name}
-                                  className="relative h-full border-r border-white/20 last:border-r-0"
-                                  style={{ width: `${widthPercent}%` }}
-                                  title={`${ts.name}: $${ts.originalBalance}M original, $${lossInTranche.toFixed(1)}M loss`}
+                                  className="relative border-b border-white/30 last:border-b-0 flex"
+                                  style={{ height: `${heightPercent}%`, minHeight: '20px' }}
+                                  title={`${ts.name}: $${ts.originalBalance}M original, $${ts.principalLoss.toFixed(1)}M loss`}
                                 >
-                                  {/* Full tranche background */}
-                                  <div className={`absolute inset-0 ${getRatingColorClass(ts.rating)} opacity-30`} />
                                   {/* Remaining (not lost) portion */}
                                   <div
-                                    className={`absolute inset-0 ${getRatingColorClass(ts.rating)}`}
+                                    className={`${getRatingColorClass(ts.rating)}`}
                                     style={{ width: `${(1 - lossRatio) * 100}%` }}
                                   />
-                                  {/* Loss portion */}
-                                  {lossInTranche > 0 && (
+                                  {/* Loss portion in red */}
+                                  {ts.principalLoss > 0 && (
                                     <div
-                                      className="absolute top-0 bottom-0 right-0 bg-red-500"
+                                      className="bg-red-500"
                                       style={{ width: `${lossRatio * 100}%` }}
                                     />
                                   )}
-                                  {/* Label */}
+                                  {/* Label overlay */}
                                   <div className="absolute inset-0 flex items-center justify-center">
-                                    <span className="text-xs font-medium text-white drop-shadow truncate px-1">
-                                      {ts.name}
+                                    <span className="text-[10px] font-medium text-white drop-shadow-sm">
+                                      {ts.rating}
                                     </span>
                                   </div>
                                 </div>
@@ -1698,55 +1535,45 @@ export default function DealModelerPage() {
                           </div>
                         </div>
 
-                        {/* Detailed Breakdown */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 pt-2">
-                          {reversedTranches.map((ts) => {
-                            const lossRatio = ts.originalBalance > 0 ? (ts.principalLoss / ts.originalBalance) * 100 : 0;
-                            return (
-                              <div
-                                key={ts.name}
-                                className={`p-2 rounded border ${
-                                  lossRatio > 50
-                                    ? 'bg-red-50 border-red-200'
-                                    : lossRatio > 0
-                                    ? 'bg-amber-50 border-amber-200'
-                                    : 'bg-green-50 border-green-200'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-xs font-medium">{ts.name}</span>
-                                  <Badge variant="outline" className="text-xs h-4">
-                                    {ts.rating}
-                                  </Badge>
-                                </div>
-                                <div className="text-xs text-gray-600">
-                                  Loss: ${ts.principalLoss.toFixed(1)}M
-                                </div>
+                        {/* Loss Details Table */}
+                        <div className="flex-1">
+                          <div className="text-xs text-gray-500 mb-2">Loss Breakdown</div>
+                          <div className="space-y-1.5">
+                            {tranches.map((ts) => {
+                              const lossRatio = ts.originalBalance > 0 ? (ts.principalLoss / ts.originalBalance) * 100 : 0;
+                              return (
                                 <div
-                                  className={`text-sm font-bold ${
-                                    lossRatio > 50 ? 'text-red-600' : lossRatio > 0 ? 'text-amber-600' : 'text-green-600'
-                                  }`}
+                                  key={ts.name}
+                                  className="flex items-center gap-3 text-sm"
                                 >
-                                  {lossRatio.toFixed(0)}%
+                                  <div className={`w-3 h-3 rounded-sm ${getRatingColorClass(ts.rating)}`} />
+                                  <span className="w-20 font-medium text-gray-700">{ts.name}</span>
+                                  <span className="w-12 text-gray-500 text-xs">{ts.rating}</span>
+                                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                    {lossRatio > 0 && (
+                                      <div
+                                        className="h-full bg-red-500 rounded-full"
+                                        style={{ width: `${Math.min(lossRatio, 100)}%` }}
+                                      />
+                                    )}
+                                  </div>
+                                  <span className={`w-16 text-right text-xs font-medium ${
+                                    lossRatio > 50 ? 'text-red-600' : lossRatio > 0 ? 'text-amber-600' : 'text-green-600'
+                                  }`}>
+                                    {lossRatio > 0 ? `${lossRatio.toFixed(0)}% loss` : 'No loss'}
+                                  </span>
                                 </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              );
+                            })}
+                          </div>
 
-                        {/* Legend */}
-                        <div className="flex gap-4 pt-2 border-t text-xs">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-green-100 border border-green-300 rounded" />
-                            <span className="text-gray-600">No Loss</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-amber-100 border border-amber-300 rounded" />
-                            <span className="text-gray-600">Partial Loss</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-red-100 border border-red-300 rounded" />
-                            <span className="text-gray-600">&gt;50% Loss</span>
+                          {/* Total Summary */}
+                          <div className="mt-4 pt-3 border-t flex items-center justify-between">
+                            <span className="text-sm text-gray-600">Total Principal Loss</span>
+                            <div className="text-right">
+                              <span className="text-lg font-bold text-red-600">${totalLoss.toFixed(1)}M</span>
+                              <span className="text-sm text-gray-500 ml-2">({lossPercent.toFixed(1)}%)</span>
+                            </div>
                           </div>
                         </div>
                       </div>

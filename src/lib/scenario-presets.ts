@@ -15,7 +15,7 @@ export interface ScenarioPreset {
 // IRR calculation needs full principal paydown to show correct returns.
 export const SCENARIO_PRESETS: Record<string, Record<string, ScenarioPreset>> = {
   'auto-abs': {
-    // Auto ABS (Subprime): CNL trigger at 15%, OC at 103%
+    // Auto ABS (Subprime): CNL trigger at 15%, OC at 104%
     // Base: realistic performing deal, run to full amortization
     base: { name: 'Base', cpr: 22, cdr: 2, recovery: 65, months: 60 },
     stress: { name: 'Stress', cpr: 6, cdr: 10, recovery: 35, months: 72 },
@@ -29,14 +29,14 @@ export const SCENARIO_PRESETS: Record<string, Record<string, ScenarioPreset>> = 
     extension: { name: 'Extension', cpr: 4, cdr: 7, recovery: 20, months: 72 },
   },
   'equipment': {
-    // Equipment ABS: CNL trigger at 10%, OC at 104%
+    // Equipment ABS: CNL trigger at 5%, OC at 104%
     // Equipment has strong recovery values, WAM is 48 months
     base: { name: 'Base', cpr: 18, cdr: 2, recovery: 85, months: 60 },
     stress: { name: 'Stress', cpr: 4, cdr: 6, recovery: 50, months: 72 },
     extension: { name: 'Extension', cpr: 2, cdr: 3, recovery: 55, months: 84 },
   },
   'clo': {
-    // CLO: OC at 108%, no CNL trigger
+    // CLO: OC at 104%, no CNL trigger (INFO trigger at M24 is non-call, not performance)
     // Loan recoveries historically ~60-70%
     base: { name: 'Base', cpr: 20, cdr: 1.5, recovery: 75, months: 72 },
     stress: { name: 'Stress', cpr: 6, cdr: 6, recovery: 50, months: 120 },

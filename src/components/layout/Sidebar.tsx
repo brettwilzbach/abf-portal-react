@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import {
   Home,
   Calculator,
-  TrendingDown,
   Newspaper,
   ExternalLink,
   ChevronLeft,
@@ -23,8 +22,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Home', href: '/', icon: Home },
-  { label: 'Deal Mechanics', href: '/deal-modeler', icon: Calculator },
-  { label: 'Spread Monitor', href: '/spreads', icon: TrendingDown },
+  { label: 'Deal Modeler', href: '/deal-modeler', icon: Calculator },
   { label: 'Market Tracker', href: '/market', icon: Newspaper },
 ];
 
